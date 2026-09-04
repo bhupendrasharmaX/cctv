@@ -1,0 +1,62 @@
+[
+  {
+    "plate_number": "GJ01AB1234",
+    "vehicle_owner": "Ramesh K. Patel",
+    "vehicle_make_model": "White Hyundai Creta",
+    "crime_category": "Stolen Vehicle / Grand Larceny",
+    "fir_number": "FIR-2026/0412",
+    "police_station": "Vastrapur Police Station, Ahmedabad",
+    "severity": "CRITICAL",
+    "notes": "Vehicle stolen from Alpha One Mall parking; suspect believed armed."
+  },
+  {
+    "plate_number": "GJ05CD5678",
+    "vehicle_owner": "Unknown / Fake Registration",
+    "vehicle_make_model": "Black Mahindra Scorpio",
+    "crime_category": "Inter-District Kidnapping",
+    "fir_number": "FIR-2026/0889",
+    "police_station": "Varachha Police Station, Surat",
+    "severity": "CRITICAL",
+    "notes": "Last seen heading towards Vadodara-Ahmedabad Expressway."
+  },
+  {
+    "plate_number": "GJ27EF9012",
+    "vehicle_owner": "Suresh J. Chauhan",
+    "vehicle_make_model": "Silver Maruti Swift",
+    "crime_category": "Hit & Run / Fatal Casualty",
+    "fir_number": "FIR-2026/1102",
+    "police_station": "InfoCity Police Station, Gandhinagar",
+    "severity": "HIGH",
+    "notes": "Involved in pedestrian collision near Mahatma Mandir."
+  },
+  {
+    "plate_number": "GJ06GH3456",
+    "vehicle_owner": "Vikram Singh Parmar",
+    "vehicle_make_model": "Red Toyota Fortuner",
+    "crime_category": "Illegal Mining Transport",
+    "fir_number": "FIR-2026/0304",
+    "police_station": "Sayajigunj Police Station, Vadodara",
+    "severity": "HIGH",
+    "notes": "Escaped mining checkpoint on Narmada border."
+  },
+  {
+    "plate_number": "GJ03JK7890",
+    "vehicle_owner": "Deepak M. Shah",
+    "vehicle_make_model": "Blue Honda City",
+    "crime_category": "Bank Fraud / Absconder",
+    "fir_number": "FIR-2026/0551",
+    "police_station": "Pradhyuman Nagar, Rajkot",
+    "severity": "MEDIUM",
+    "notes": "Wanted in financial cybercrime conspiracy."
+  },
+  {
+    "plate_number": "GJ01XY9999",
+    "vehicle_owner": "Special Taskforce Test Subject",
+    "vehicle_make_model": "Dark Grey Tata Harrier",
+    "crime_category": "High-Value Target Surveillance",
+    "fir_number": "FIR-EVAL-2026",
+    "police_station": "State Cyber Cell, CID Gujarat",
+    "severity": "CRITICAL",
+    "notes": "Designated evaluation test target for live CCTV movement tracing."
+  }
+]

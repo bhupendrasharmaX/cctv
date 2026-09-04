@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Gujarat Police — Unified CCTV Video Management & Analytics Ecosystem</title>
+
+  <!-- Google Fonts: Inter -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link
+    href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap"
+    rel="stylesheet">
+
+  <!-- Leaflet GIS CSS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+
+  <!-- Custom Command Dashboard Stylesheet -->
+  <link rel="stylesheet" href="/css/dashboard.css">
+</head>
+
+<body>
+
+  <!-- Siren Top Banner for Critical Watchlist Matches -->
+  <div id="siren-banner" class="siren-banner"></div>
+
+  <!-- Command Header -->
+  <header class="header">
+    <div class="brand-section">
+      <div class="police-emblem">GP</div>
+      <div class="brand-title">
+        <h1>GUJARAT POLICE — UNIFIED CCTV & AI ANALYTICS PLATFORM</h1>
+        <p>Model 2: Unified Viewing & Selective Analytics • Model 1: Registry & GIS Foundation</p>
+      </div>
+    </div>
+
+    <div class="header-stats">
+      <div class="stat-pill">
+        <span class="status-dot"></span>
+        <span>Registry: <b id="stat-cameras-count">--</b> Feeds</span>
+      </div>
+      <div class="stat-pill">
+        <span class="status-dot alert"></span>
+        <span>Watchlist Alerts: <b id="stat-alerts-count">0</b></span>
+      </div>
+      <div class="stat-pill">
+        <span id="system-clock" class="clock">00:00:00 IST</span>
+      </div>
+      <button class="btn-xs" style="background:#0369a1; color:#fff;" onclick="openWatchlistModal()">
+        Watchlist DB
+      </button>
+      <button class="btn-xs" style="background:#1e293b; color:#38bdf8;" onclick="syncGovtCatalogue()">
+        Sync Ingest API
+      </button>
+    </div>
+  </header>
+
+  <!-- 4-Quadrant Mission Critical Layout -->
+  <main class="main-layout">
+
+    <!-- Quadrant 1: Unified Multi-Camera Viewer (Model 2 Core) -->
+    <section class="panel viewer-panel">
+      <div class="panel-header">
+        <div class="panel-title">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18" />
+            <line x1="7" y1="2" x2="7" y2="22" />
+            <line x1="17" y1="2" x2="17" y2="22" />
+            <line x1="2" y1="12" x2="22" y2="12" />
+          </svg>
+          Unified Multi-Camera Viewer (Model 2)
+        </div>
+        <div class="panel-actions">
+          <button class="btn-xs" onclick="viewer.setLayout('1x1')">1x1</button>
+          <button class="btn-xs active" id="btn-grid-2x2" onclick="viewer.setLayout('2x2')">2x2</button>
+          <button class="btn-xs" onclick="viewer.setLayout('3x3')">3x3</button>
+        </div>
+      </div>
+      <div id="camera-grid" class="camera-grid grid-2x2">
+        <!-- Live camera tiles loaded dynamically -->
+      </div>
+    </section>
+
+    <!-- Quadrant 2: Centralized GIS Map Foundation (Model 1 & Route Visualizer) -->
+    <section class="panel gis-panel">
+      <div class="panel-header">
+        <div class="panel-title">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6" />
+            <line x1="8" y1="2" x2="8" y2="18" />
+            <line x1="16" y1="6" x2="16" y2="22" />
+          </svg>
+          Statewide GIS Foundation & Trajectory Visualizer
+        </div>
+        <div class="panel-actions">
+          <button class="btn-xs" onclick="gisMap.map.setView([23.0489, 72.5054], 11)">Center Ahmedabad</button>
+          <button class="btn-xs" onclick="gisMap.map.setView([23.2156, 72.6369], 12)">Center Gandhinagar</button>
+        </div>
+      </div>
+      <div id="map"></div>
+    </section>
+
+    <!-- Quadrant 3: Vehicle Movement Timeline & Re-ID Investigation -->
+    <section class="panel tracker-panel">
+      <div class="panel-header">
+        <div class="panel-title">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="11" cy="11" r="8" />
+            <line x1="21" y1="21" x2="16.65" y2="16.65" />
+          </svg>
+          Cross-Camera Vehicle Investigation & Timeline
+        </div>
+        <div class="panel-actions">
+          <button id="btn-export-docket" class="btn-xs" style="display:none; background:#10b981; color:#fff;"
+            onclick="tracker.openDocketModal()">
+            Export Evidence Docket
+          </button>
+        </div>
+      </div>
+
+      <div class="tracker-search-bar">
+        <input type="text" id="target-plate-input"
+          placeholder="ENTER DESIGNATED VEHICLE REGISTRATION (E.G. GJ01AB1234)..." value="GJ01AB1234">
+        <button id="btn-track-vehicle" class="btn-primary">
+          Trace Route
+        </button>
+      </div>
+
+      <div id="timeline-container" class="timeline-container">
+        <div style="padding:20px; text-align:center; color:#64748b;">
+          Enter a target registration number to reconstruct its cross-camera trajectory.
+        </div>
+      </div>
+    </section>
+
+    <!-- Quadrant 4: Real-Time Watchlist Alerts Feed -->
+    <section class="panel alerts-panel">
+      <div class="panel-header">
+        <div class="panel-title">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="2">
+            <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+            <line x1="12" y1="9" x2="12" y2="13" />
+            <line x1="12" y1="17" x2="12.01" y2="17" />
+          </svg>
+          Automated Real-Time Watchlist Alerts
+        </div>
+        <div class="panel-actions">
+          <button class="btn-xs" onclick="loadRecentAlerts()">Refresh</button>
+        </div>
+      </div>
+      <div id="alert-feed" class="alert-feed">
+        <!-- Live alerts prepended dynamically -->
+      </div>
+    </section>
+
+  </main>
+
+  <!-- Modal: Evidentiary Docket Report -->
+  <div id="docket-modal" class="modal-overlay">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3 style="font-size:14px; color:#f8fafc;">Official Evidentiary Surveillance Docket</h3>
+        <div style="display:flex; gap:8px;">
+          <button class="btn-primary" onclick="window.print()">Print / Save PDF</button>
+          <button class="btn-xs" onclick="document.getElementById('docket-modal').style.display='none'">Close</button>
+        </div>
+      </div>
+      <div id="docket-modal-body" class="modal-body"></div>
+    </div>
+  </div>
+
+  <!-- Modal: Watchlist Database Management -->
+  <div id="watchlist-modal" class="modal-overlay">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3 style="font-size:14px; color:#f8fafc;">Representative Police Watchlist Database</h3>
+        <button class="btn-xs" onclick="document.getElementById('watchlist-modal').style.display='none'">Close</button>
+      </div>
+      <div id="watchlist-modal-body" class="modal-body">
+        <table style="width:100%; border-collapse:collapse; font-size:12px;">
+          <thead>
+            <tr style="background:#1e293b; color:#94a3b8; text-align:left;">
+              <th style="padding:6px;">Plate</th>
+              <th style="padding:6px;">Category</th>
+              <th style="padding:6px;">Make / Model</th>
+              <th style="padding:6px;">Police Station & FIR</th>
+              <th style="padding:6px;">Action</th>
+            </tr>
+          </thead>
+          <tbody id="watchlist-table-rows"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Leaflet GIS JS -->
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+    integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+
+  <!-- Application Modules -->
+  <script src="/js/api.js"></script>
+  <script src="/js/viewer.js"></script>
+  <script src="/js/map.js"></script>
+  <script src="/js/alerts.js"></script>
+  <script src="/js/tracker.js"></script>
+
+  <!-- Dashboard Initialization -->
+  <script>
+    let viewer, gisMap, alertManager, tracker;
+
+    document.addEventListener('DOMContentLoaded', async () => {
+      // 1. Initialize clock
+      setInterval(() => {
+        const now = new Date();
+        document.getElementById('system-clock').textContent = now.toLocaleTimeString() + ' IST';
+      }, 1000);
+
+      // 2. Initialize GIS Map
+      gisMap = new GISMap('map');
+      gisMap.init();
+
+      // 3. Initialize Unified Multi-Viewer
+      viewer = new UnifiedViewer('camera-grid');
+
+      // 4. Initialize Alert Manager
+      alertManager = new AlertManager('alert-feed', 'siren-banner');
+
+      // 5. Initialize Vehicle Tracker
+      tracker = new VehicleTracker('timeline-container', gisMap);
+
+      // 6. Connect WebSocket for Real-time alerts
+      API.connectWebSocket(
+        (alertData) => alertManager.handleIncomingAlert(alertData, gisMap),
+        (detectionData) => console.log('Detection event:', detectionData)
+      );
+
+      // 7. Load Cameras & Model 1 Registry
+      await loadCameraRegistry();
+
+      // 8. Load recent alerts
+      await loadRecentAlerts();
+
+      // 9. Bind search button
+      document.getElementById('btn-track-vehicle').addEventListener('click', () => {
+        const plate = document.getElementById('target-plate-input').value;
+        tracker.searchAndTrace(plate);
+      });
+
+      // Allow Enter key to trigger search
+      document.getElementById('target-plate-input').addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') {
+          document.getElementById('btn-track-vehicle').click();
+        }
+      });
+    });
+
+    async function loadCameraRegistry() {
+      try {
+        const cameras = await API.getCameras();
+        document.getElementById('stat-cameras-count').textContent = cameras.length;
+        viewer.loadCameras(cameras);
+
+        const geojson = await API.getCamerasGeoJSON();
+        gisMap.renderCameras(geojson);
+      } catch (e) {
+        console.error('Failed to load camera registry:', e);
+      }
+    }
+
+    async function loadRecentAlerts() {
+      try {
+        const alerts = await API.getAlerts();
+        const feed = document.getElementById('alert-feed');
+        feed.innerHTML = '';
+        alerts.forEach(a => alertManager.renderAlertCard(a, false));
+      } catch (e) {
+        console.error('Failed to load alerts:', e);
+      }
+    }
+
+    async function syncGovtCatalogue() {
+      try {
+        const res = await fetch('/api/sync-catalogue', { method: 'POST' });
+        const data = await res.json();
+        alert(`Catalogue Sync Completed: ${data.synced_cameras} cameras loaded (Source: ${data.source})`);
+        await loadCameraRegistry();
+      } catch (e) {
+        alert('Sync error: ' + e.message);
+      }
+    }
+
+    async function openWatchlistModal() {
+      try {
+        const watchlist = await API.getWatchlist();
+        const tbody = document.getElementById('watchlist-table-rows');
+        tbody.innerHTML = '';
+        watchlist.forEach(w => {
+          const tr = document.createElement('tr');
+          tr.style.borderBottom = '1px solid #334155';
+          tr.innerHTML = `
+            <td style="padding:6px;"><b style="color:#38bdf8; font-family:monospace;">${w.plate_number}</b></td>
+            <td style="padding:6px;"><span style="color:#ef4444;">${w.crime_category}</span></td>
+            <td style="padding:6px;">${w.vehicle_make_model || '-'}</td>
+            <td style="padding:6px;">${w.police_station || '-'}<br><small>${w.fir_number || '-'}</small></td>
+            <td style="padding:6px;">
+              <button class="btn-xs" onclick="tracker.searchAndTrace('${w.plate_number}'); document.getElementById('watchlist-modal').style.display='none';">Trace</button>
+            </td>
+          `;
+          tbody.appendChild(tr);
+        });
+        document.getElementById('watchlist-modal').style.display = 'flex';
+      } catch (e) {
+        alert('Error loading watchlist: ' + e.message);
+      }
+    }
+  </script>
+</body>
+
+</html>
