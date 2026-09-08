@@ -47,6 +47,8 @@ $RECYCLE.BIN/
 
 # Local SQLite databases & dynamic runtime snapshots
 data/*.db
+data/*.db-wal
+data/*.db-shm
 data/*.sqlite3
 data/*.sqlite
 data/snapshots/*
