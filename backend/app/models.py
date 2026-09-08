@@ -2,8 +2,40 @@ import datetime
 from typing import Optional, List
 from sqlalchemy import Column, String, Integer, Float, Boolean, DateTime, ForeignKey, Text, BigInteger, Index
 from sqlalchemy.orm import relationship
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, field_serializer
 from backend.app.database import Base
+
+
+# ==================== Time handling ====================
+# Everything is stored as *naive UTC*. Storing naive local time and rendering it
+# as if it were local is how surveillance timelines silently drift by the local
+# offset (5h30m in IST), which is unacceptable on an evidentiary record.
+# `utc_iso` is the only sanctioned way to put a stored timestamp on the wire: it
+# stamps the offset so browsers parse it as UTC instead of as local time.
+
+def utcnow() -> datetime.datetime:
+    """Current UTC time, naive, matching how timestamps are stored."""
+    return datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None)
+
+
+def utc_iso(dt: Optional[datetime.datetime]) -> Optional[str]:
+    """Serialize a stored naive-UTC timestamp as an explicit UTC ISO-8601 string."""
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=datetime.timezone.utc)
+    return dt.astimezone(datetime.timezone.utc).isoformat()
+
+
+class UTCTimestampMixin:
+    """Pydantic mixin: emit every datetime field with an explicit UTC offset."""
+
+    @field_serializer("*", when_used="json", check_fields=False)
+    def _serialize_datetimes(self, value):
+        if isinstance(value, datetime.datetime):
+            return utc_iso(value)
+        return value
+
 
 # ==================== SQLAlchemy ORM Models ====================
 
@@ -23,8 +55,8 @@ class Camera(Base):
     whep_url = Column(Text, nullable=True)
     hls_url = Column(Text, nullable=True)
     connectivity_status = Column(String(20), default="ONLINE") # ONLINE, OFFLINE, DEGRADED
-    last_ping = Column(DateTime, default=datetime.datetime.utcnow)
-    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+    last_ping = Column(DateTime, default=utcnow)
+    created_at = Column(DateTime, default=utcnow)
 
     detections = relationship("Detection", back_populates="camera")
     alerts = relationship("Alert", back_populates="camera")
@@ -40,11 +72,17 @@ class Detection(Base):
     confidence = Column(Float, default=0.0)
     vehicle_type = Column(String(30), default="CAR") # CAR, TRUCK, BUS, MOTORCYCLE
     pts_timestamp_ms = Column(BigInteger, default=0)
-    capture_timestamp = Column(DateTime, default=datetime.datetime.utcnow, index=True)
+    capture_timestamp = Column(DateTime, default=utcnow, index=True)
     snapshot_path = Column(Text, nullable=True)
 
     camera = relationship("Camera", back_populates="detections")
     alerts = relationship("Alert", back_populates="detection")
+
+    # Plate lookups always filter on plate and order by time; the composite index
+    # keeps the cross-camera trace a single range scan as the table grows.
+    __table_args__ = (
+        Index("ix_detections_plate_time", "plate_number", "capture_timestamp"),
+    )
 
 
 class Watchlist(Base):
@@ -60,7 +98,7 @@ class Watchlist(Base):
     severity = Column(String(20), default="CRITICAL") # CRITICAL, HIGH, MEDIUM
     notes = Column(Text, nullable=True)
     active = Column(Boolean, default=True)
-    added_at = Column(DateTime, default=datetime.datetime.utcnow)
+    added_at = Column(DateTime, default=utcnow)
 
     alerts = relationship("Alert", back_populates="watchlist_entry")
 
@@ -72,11 +110,15 @@ class Alert(Base):
     detection_id = Column(Integer, ForeignKey("detections.detection_id"), nullable=True)
     watchlist_id = Column(Integer, ForeignKey("watchlist.watchlist_id"), nullable=True)
     camera_id = Column(String(64), ForeignKey("cameras.camera_id"), nullable=False)
-    plate_number = Column(String(32), nullable=False)
-    severity = Column(String(20), default="CRITICAL")
+    plate_number = Column(String(32), nullable=False) # What the camera actually read
+    matched_plate = Column(String(32), nullable=True) # The watchlist entry it matched
+    match_type = Column(String(24), default="EXACT") # EXACT, FUZZY_UNCONFIRMED
+    severity = Column(String(20), default="CRITICAL") # CRITICAL, HIGH, MEDIUM, REVIEW
     alert_message = Column(Text, nullable=False)
     status = Column(String(20), default="NEW") # NEW, ACKNOWLEDGED, RESOLVED
-    created_at = Column(DateTime, default=datetime.datetime.utcnow, index=True)
+    sighting_count = Column(Integer, default=1) # Repeat sightings folded in by the cooldown
+    last_seen_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=utcnow, index=True)
 
     camera = relationship("Camera", back_populates="alerts")
     detection = relationship("Detection", back_populates="alerts")
@@ -85,7 +127,7 @@ class Alert(Base):
 
 # ==================== Pydantic Schemas ====================
 
-class CameraSchema(BaseModel):
+class CameraSchema(UTCTimestampMixin, BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     camera_id: str
@@ -114,7 +156,7 @@ class DetectionCreate(BaseModel):
     snapshot_path: Optional[str] = None
 
 
-class DetectionSchema(BaseModel):
+class DetectionSchema(UTCTimestampMixin, BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     detection_id: int
@@ -128,7 +170,7 @@ class DetectionSchema(BaseModel):
     snapshot_path: Optional[str] = None
 
 
-class WatchlistSchema(BaseModel):
+class WatchlistSchema(UTCTimestampMixin, BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     watchlist_id: int
@@ -144,7 +186,7 @@ class WatchlistSchema(BaseModel):
     added_at: datetime.datetime
 
 
-class AlertSchema(BaseModel):
+class AlertSchema(UTCTimestampMixin, BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     alert_id: int
@@ -152,9 +194,12 @@ class AlertSchema(BaseModel):
     watchlist_id: Optional[int] = None
     camera_id: str
     plate_number: str
+    matched_plate: Optional[str] = None
+    match_type: Optional[str] = "EXACT"
     severity: str
     alert_message: str
     status: str
+    sighting_count: Optional[int] = 1
     created_at: datetime.datetime
     camera_name: Optional[str] = None
     department: Optional[str] = None
@@ -163,3 +208,5 @@ class AlertSchema(BaseModel):
     snapshot_path: Optional[str] = None
     vehicle_make_model: Optional[str] = None
     crime_category: Optional[str] = None
+    fir_number: Optional[str] = None
+    police_station: Optional[str] = None

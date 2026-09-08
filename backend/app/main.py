@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from pathlib import Path
 from contextlib import asynccontextmanager
@@ -5,10 +6,10 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from backend.app.config import SNAPSHOT_DIR, DATA_DIR
+from backend.app.config import SNAPSHOT_DIR, DATA_DIR, CORS_ALLOW_ORIGINS
 from backend.app.database import init_db, SessionLocal
 from backend.app.services.catalogue import sync_catalogue_with_db
-from backend.app.services.alert_engine import ws_manager
+from backend.app.services.alert_engine import ws_manager, register_event_loop
 from backend.app.routers import registry, search, watchlist, alerts, stream_control
 
 # Configure system-wide logging
@@ -22,6 +23,12 @@ logger = logging.getLogger("cctv.main")
 async def lifespan(app: FastAPI):
     # Startup sequence
     logger.info("Initializing Gujarat CCTV Unified Analytics & Command Platform...")
+
+    # Hand the running loop to the alert engine. Detections are produced from
+    # threads (stream workers, and FastAPI's threadpool for sync endpoints), so
+    # without this handle every real-time broadcast is silently discarded.
+    register_event_loop(asyncio.get_running_loop())
+
     init_db()
 
     # Pre-populate watchlist & camera catalogue if not present
@@ -54,18 +61,22 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="Gujarat Police Unified CCTV & Video Analytics Platform",
     description="Unified Viewing, AI ANPR, Cross-Camera Vehicle Tracking & Real-Time Alert Command Center (Model 2 + Model 1)",
-    version="2.0.0",
+    version="2.1.0",
     lifespan=lifespan
 )
 
-# CORS middleware for seamless browser communication
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# CORS. The dashboard is served by this same app, so same-origin needs no CORS
+# entry at all; additional origins are opt-in through CORS_ALLOW_ORIGINS.
+# A wildcard combined with allow_credentials is rejected by browsers anyway and
+# would expose the camera registry (including RTSP URLs) to any website.
+if CORS_ALLOW_ORIGINS:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=CORS_ALLOW_ORIGINS,
+        allow_credentials=True,
+        allow_methods=["GET", "POST", "DELETE"],
+        allow_headers=["*"],
+    )
 
 # Mount API routers
 app.include_router(registry.router)
@@ -73,6 +84,18 @@ app.include_router(search.router)
 app.include_router(watchlist.router)
 app.include_router(alerts.router)
 app.include_router(stream_control.router)
+
+
+@app.get("/api/health", tags=["System"])
+def health_check():
+    """Liveness probe plus live client/worker counts for the dashboard header."""
+    from ai_engine.multi_stream_runner import stream_pool
+    return {
+        "status": "healthy",
+        "dashboard_clients": len(ws_manager.active_connections),
+        "ai_workers": stream_pool.get_status(),
+    }
+
 
 # Real-time WebSocket connection for live alerts and detections
 @app.websocket("/ws/alerts")

@@ -1,7 +1,10 @@
+import datetime
 import math
 from typing import Dict, Any, List, Optional
 from sqlalchemy.orm import Session
-from backend.app.models import Detection, Camera
+from backend.app.config import HOP_GROUPING_WINDOW_SECONDS, IMPLAUSIBLE_SPEED_KMH
+from backend.app.models import Detection, Camera, utc_iso
+
 
 def haversine_distance_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     """Calculate the great-circle distance between two GPS points in kilometers."""
@@ -12,6 +15,38 @@ def haversine_distance_km(lat1: float, lon1: float, lat2: float, lon2: float) ->
          math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlon / 2) ** 2)
     c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
     return round(R * c, 3)
+
+
+def _format_duration(seconds: float) -> str:
+    total = int(seconds)
+    hours, rem = divmod(total, 3600)
+    minutes, secs = divmod(rem, 60)
+    if hours:
+        return f"{hours}h {minutes}m"
+    return f"{minutes}m {secs}s"
+
+
+def _empty_result(normalized_plate: str) -> Dict[str, Any]:
+    """
+    Same response shape as a successful trace. Callers should not have to branch
+    on which keys exist just because a plate had no sightings.
+    """
+    return {
+        "plate_number": normalized_plate,
+        "total_hops": 0,
+        "total_detections": 0,
+        "total_distance_km": 0.0,
+        "first_observed": None,
+        "last_observed": None,
+        "timeline": [],
+        "geojson": {"type": "FeatureCollection", "features": []},
+        "summary": {
+            "status": "NOT_FOUND",
+            "first_location": None,
+            "last_location": None,
+            "message": f"No CCTV detections recorded for registration plate '{normalized_plate}'",
+        },
+    }
 
 
 def trace_vehicle_trajectory(db: Session, target_plate: str) -> Dict[str, Any]:
@@ -31,29 +66,30 @@ def trace_vehicle_trajectory(db: Session, target_plate: str) -> Dict[str, Any]:
         .all()
 
     if not records:
-        return {
-            "plate_number": normalized_plate,
-            "total_hops": 0,
-            "total_detections": 0,
-            "route_geojson": None,
-            "timeline": [],
-            "summary": {
-                "status": "NOT_FOUND",
-                "message": f"No CCTV detections recorded for registration plate '{normalized_plate}'"
-            }
-        }
+        return _empty_result(normalized_plate)
 
-    # Group successive detections at the same camera within 120s into a single visit
-    hops = []
-    current_hop = None
+    # Group successive detections at the same camera into a single visit, but only
+    # while they stay inside the grouping window. A vehicle that passes a junction
+    # in the morning and again in the evening made two visits, not one nine-hour
+    # dwell, and collapsing them would erase a leg of the journey.
+    hops: List[Dict[str, Any]] = []
+    current_hop: Optional[Dict[str, Any]] = None
+    last_seen_dt: Optional[datetime.datetime] = None
 
     for det, cam in records:
         ts = det.capture_timestamp
-        if current_hop and current_hop["camera_id"] == cam.camera_id:
-            # Same camera: update dwell time and frame count
-            current_hop["last_seen"] = ts.isoformat()
+        same_camera = current_hop is not None and current_hop["camera_id"] == cam.camera_id
+        within_window = (
+            last_seen_dt is not None
+            and (ts - last_seen_dt).total_seconds() <= HOP_GROUPING_WINDOW_SECONDS
+        )
+
+        if same_camera and within_window:
+            current_hop["last_seen"] = utc_iso(ts)
             current_hop["detection_count"] += 1
-            if det.snapshot_path:
+            current_hop["dwell_seconds"] = int((ts - current_hop["_first_dt"]).total_seconds())
+            current_hop["confidence"] = max(current_hop["confidence"], det.confidence or 0.0)
+            if det.snapshot_path and not current_hop["snapshot_path"]:
                 current_hop["snapshot_path"] = det.snapshot_path
         else:
             if current_hop:
@@ -67,49 +103,71 @@ def trace_vehicle_trajectory(db: Session, target_plate: str) -> Dict[str, Any]:
                 "latitude": cam.latitude,
                 "longitude": cam.longitude,
                 "location_description": cam.location_description,
-                "first_seen": ts.isoformat(),
-                "last_seen": ts.isoformat(),
+                "first_seen": utc_iso(ts),
+                "last_seen": utc_iso(ts),
+                "dwell_seconds": 0,
                 "detection_count": 1,
                 "snapshot_path": det.snapshot_path,
                 "vehicle_type": det.vehicle_type,
-                "confidence": det.confidence,
-                "transit_time_from_prev": None,
+                "confidence": det.confidence or 0.0,
+                "pts_timestamp_ms": det.pts_timestamp_ms,
+                "transit_time_seconds": None,
+                "transit_time_formatted": None,
                 "distance_from_prev_km": 0.0,
-                "est_speed_kmh": 0.0
+                "est_speed_kmh": 0.0,
+                "speed_implausible": False,
+                # Kept out of the response; used only for interval arithmetic.
+                "_first_dt": ts,
+                "_last_dt": ts,
             }
+
+        current_hop["_last_dt"] = ts
+        last_seen_dt = ts
 
     if current_hop:
         hops.append(current_hop)
 
-    # Calculate inter-camera speed, transit duration, and travel distance
+    # Calculate inter-camera distance, transit duration and speed.
     total_distance_km = 0.0
     route_coordinates = []
+    implausible_legs = 0
 
-    for i in range(len(hops)):
-        route_coordinates.append([hops[i]["longitude"], hops[i]["latitude"]])
-        if i > 0:
-            prev = hops[i - 1]
-            curr = hops[i]
-            dist = haversine_distance_km(prev["latitude"], prev["longitude"], curr["latitude"], curr["longitude"])
-            curr["distance_from_prev_km"] = dist
-            total_distance_km += dist
+    for i, curr in enumerate(hops):
+        route_coordinates.append([curr["longitude"], curr["latitude"]])
+        if i == 0:
+            continue
 
-            # Compute time delta
-            import dateutil.parser
-            t_prev = dateutil.parser.parse(prev["last_seen"])
-            t_curr = dateutil.parser.parse(curr["first_seen"])
-            delta_sec = max(1, (t_curr - t_prev).total_seconds())
-            curr["transit_time_seconds"] = int(delta_sec)
-            curr["transit_time_formatted"] = f"{int(delta_sec // 60)}m {int(delta_sec % 60)}s"
+        prev = hops[i - 1]
+        dist = haversine_distance_km(prev["latitude"], prev["longitude"], curr["latitude"], curr["longitude"])
+        curr["distance_from_prev_km"] = dist
+        total_distance_km += dist
 
-            # Compute estimated speed
-            speed_kmh = (dist / (delta_sec / 3600.0)) if delta_sec > 0 else 0
+        delta_sec = (curr["_first_dt"] - prev["_last_dt"]).total_seconds()
+        curr["transit_time_seconds"] = int(delta_sec)
+        curr["transit_time_formatted"] = _format_duration(delta_sec)
+
+        if delta_sec > 0:
+            speed_kmh = dist / (delta_sec / 3600.0)
             curr["est_speed_kmh"] = round(speed_kmh, 1)
+            # Two distant cameras seeing the same plate seconds apart is the
+            # signature of a cloned or misread plate. Surface it rather than
+            # rendering 4,000 km/h as though it were an observation.
+            curr["speed_implausible"] = speed_kmh > IMPLAUSIBLE_SPEED_KMH
+        else:
+            # Simultaneous sightings at two locations: physically impossible.
+            curr["est_speed_kmh"] = None
+            curr["speed_implausible"] = dist > 0.5
+
+        if curr["speed_implausible"]:
+            implausible_legs += 1
+
+    for hop in hops:
+        hop.pop("_first_dt", None)
+        hop.pop("_last_dt", None)
 
     # GeoJSON FeatureCollection with points and route LineString
     geojson_features = []
 
-    # 1. Point markers for each camera hop
     for hop in hops:
         geojson_features.append({
             "type": "Feature",
@@ -123,13 +181,13 @@ def trace_vehicle_trajectory(db: Session, target_plate: str) -> Dict[str, Any]:
                 "department": hop["department"],
                 "first_seen": hop["first_seen"],
                 "last_seen": hop["last_seen"],
-                "transit_time": hop.get("transit_time_formatted", "Start Point"),
-                "speed_kmh": hop.get("est_speed_kmh", 0),
-                "snapshot_path": hop.get("snapshot_path")
+                "transit_time": hop["transit_time_formatted"] or "Start Point",
+                "speed_kmh": hop["est_speed_kmh"],
+                "speed_implausible": hop["speed_implausible"],
+                "snapshot_path": hop["snapshot_path"]
             }
         })
 
-    # 2. LineString connecting the path
     if len(route_coordinates) >= 2:
         geojson_features.append({
             "type": "Feature",
@@ -144,13 +202,23 @@ def trace_vehicle_trajectory(db: Session, target_plate: str) -> Dict[str, Any]:
             }
         })
 
+    message = (
+        f"Reconstructed cross-camera route across {len(hops)} departmental CCTV checkpoints."
+    )
+    if implausible_legs:
+        message += (
+            f" {implausible_legs} leg(s) imply speeds above {IMPLAUSIBLE_SPEED_KMH:.0f} km/h "
+            f"and need manual verification -- possible plate misread or cloned plate."
+        )
+
     return {
         "plate_number": normalized_plate,
         "total_hops": len(hops),
         "total_detections": len(records),
         "total_distance_km": round(total_distance_km, 2),
-        "first_observed": hops[0]["first_seen"] if hops else None,
-        "last_observed": hops[-1]["last_seen"] if hops else None,
+        "implausible_legs": implausible_legs,
+        "first_observed": hops[0]["first_seen"],
+        "last_observed": hops[-1]["last_seen"],
         "timeline": hops,
         "geojson": {
             "type": "FeatureCollection",
@@ -158,8 +226,8 @@ def trace_vehicle_trajectory(db: Session, target_plate: str) -> Dict[str, Any]:
         },
         "summary": {
             "status": "TRACKED",
-            "first_location": f"{hops[0]['camera_name']} ({hops[0]['department']})" if hops else None,
-            "last_location": f"{hops[-1]['camera_name']} ({hops[-1]['department']})" if hops else None,
-            "message": f"Successfully reconstructed cross-camera route across {len(hops)} departmental CCTV checkpoints."
+            "first_location": f"{hops[0]['camera_name']} ({hops[0]['department']})",
+            "last_location": f"{hops[-1]['camera_name']} ({hops[-1]['department']})",
+            "message": message
         }
     }

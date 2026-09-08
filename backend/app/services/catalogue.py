@@ -1,10 +1,10 @@
 import logging
 import requests
 import datetime
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 from sqlalchemy.orm import Session
 from backend.app.config import GOVT_INGEST_URL, GOVT_GATEWAY_HOST
-from backend.app.models import Camera
+from backend.app.models import Camera, utcnow
 
 logger = logging.getLogger("cctv.catalogue")
 
@@ -218,14 +218,23 @@ def generate_default_gujarat_cameras(host: str) -> List[Dict[str, Any]]:
     return camera_records
 
 
-def sync_catalogue_with_db(db: Session, ingest_url: str = GOVT_INGEST_URL, host: str = GOVT_GATEWAY_HOST) -> Dict[str, Any]:
+def sync_catalogue_with_db(db: Session, host: Optional[str] = None, ingest_url: Optional[str] = None) -> Dict[str, Any]:
     """
     Onboard cameras from the government gateway endpoint:
     `curl -s http://<host>/api/ingest`
     If reachable: parses JSON catalogue.
     If unreachable: falls back to high-fidelity Gujarat CCTV network seed.
     Upserts into the `cameras` database table.
+
+    Passing `host` alone now also retargets the ingest URL. Previously the host
+    only affected the generated stream URLs while the fetch still went to the
+    default gateway, so `?host=` appeared to work but silently queried the wrong
+    machine.
     """
+    host = host or GOVT_GATEWAY_HOST
+    if ingest_url is None:
+        ingest_url = f"http://{host}/api/ingest" if host != GOVT_GATEWAY_HOST else GOVT_INGEST_URL
+
     raw_data = None
     source = "live_gateway"
 
@@ -246,7 +255,7 @@ def sync_catalogue_with_db(db: Session, ingest_url: str = GOVT_INGEST_URL, host:
 
     # Normalize incoming catalogue data to database schema
     synced_count = 0
-    now = datetime.datetime.utcnow()
+    now = utcnow()
 
     # Ingest endpoint might return {"cameras": [...]} or directly [...]
     camera_list = raw_data if isinstance(raw_data, list) else raw_data.get("cameras", raw_data.get("data", []))

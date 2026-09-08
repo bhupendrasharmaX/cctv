@@ -52,3 +52,6 @@ data/*.sqlite
 data/snapshots/*
 !data/snapshots/.gitkeep
 !data/seed_watchlist.json
+
+# Test artifacts
+.pytest_cache/

@@ -9,7 +9,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from backend.app.database import SessionLocal, init_db
-from backend.app.models import Camera, Detection, Watchlist
+from backend.app.models import Camera, Detection, Watchlist, utcnow
 from backend.app.services.alert_engine import check_and_generate_alert
 from backend.app.services.catalogue import sync_catalogue_with_db
 
@@ -39,7 +39,7 @@ def simulate_cross_camera_journey(target_plate: str = "GJ01AB1234"):
     db.query(Detection).filter(Detection.plate_number == target_plate).delete()
     db.commit()
 
-    base_time = datetime.datetime.utcnow() - datetime.timedelta(minutes=25)
+    base_time = utcnow() - datetime.timedelta(minutes=25)
     current_time = base_time
 
     total_simulated = 0
