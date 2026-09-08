@@ -4,101 +4,148 @@ class VehicleTracker {
     this.container = document.getElementById(timelineContainerId);
     this.gisMap = gisMapInstance;
     this.currentTrackData = null;
+    this.lastQueriedAt = null;
+  }
+
+  setState(html) {
+    this.container.innerHTML = `<div class="tracker-state">${html}</div>`;
   }
 
   async searchAndTrace(plateNumber) {
-    if (!plateNumber || plateNumber.trim().length < 3) {
-      alert('Please enter a valid vehicle registration plate.');
+    const normalized = Utils.normalizePlate(plateNumber);
+    if (normalized.length < 3) {
+      Utils.toast('Enter a valid vehicle registration number.', 'error');
       return;
     }
 
-    this.container.innerHTML = `
-      <div style="padding:20px; text-align:center; color:#38bdf8;">
-        Searching across 80,000 camera index for <b>${plateNumber.toUpperCase()}</b>...
-      </div>
-    `;
+    const exportBtn = document.getElementById('btn-export-docket');
+    if (exportBtn) exportBtn.hidden = true;
+
+    this.setState(`
+      <div class="spinner"></div>
+      <div>Reconstructing cross-camera trajectory for <b>${Utils.esc(normalized)}</b>…</div>
+    `);
 
     try {
-      const data = await API.trackVehicle(plateNumber);
+      const data = await API.trackVehicle(normalized);
       this.currentTrackData = data;
+      this.lastQueriedAt = new Date();
 
-      if (data.total_hops === 0) {
-        this.container.innerHTML = `
-          <div style="padding:20px; text-align:center; color:#94a3b8;">
-            No CCTV sightings found for vehicle <b>${data.plate_number}</b>.<br>
-            <small>Verify plate number or start AI analytics on active camera feeds.</small>
-          </div>
-        `;
+      if (!data.total_hops) {
+        this.setState(`
+          <div class="state-icon">∅</div>
+          <div>No CCTV sightings recorded for <b>${Utils.esc(data.plate_number)}</b>.</div>
+          <small>Confirm the registration, or start AI analytics on the relevant feeds and retry.</small>
+        `);
+        if (this.gisMap) this.gisMap.clearRoute();
         return;
       }
 
-      // Render chronological timeline
       this.renderTimeline(data);
+      if (this.gisMap) this.gisMap.plotVehicleRoute(data);
+      if (exportBtn) exportBtn.hidden = false;
 
-      // Plot route on GIS map
-      if (this.gisMap) {
-        this.gisMap.plotVehicleRoute(data);
+      if (data.implausible_legs) {
+        Utils.toast(
+          `${data.implausible_legs} leg(s) imply impossible speeds — possible plate misread or cloned plate.`,
+          'error',
+          7000,
+        );
       }
-
-      // Enable export docket button
-      const exportBtn = document.getElementById('btn-export-docket');
-      if (exportBtn) exportBtn.style.display = 'inline-block';
-
     } catch (e) {
-      this.container.innerHTML = `
-        <div style="padding:20px; text-align:center; color:#ef4444;">
-          Error querying vehicle history: ${e.message}
-        </div>
-      `;
+      this.setState(`
+        <div class="state-icon state-error">!</div>
+        <div>Could not query vehicle history.</div>
+        <small>${Utils.esc(e.message)}</small>
+      `);
     }
   }
 
   renderTimeline(trackData) {
+    const esc = Utils.esc.bind(Utils);
     this.container.innerHTML = '';
 
     const header = document.createElement('div');
-    header.style.cssText = 'padding: 4px 8px; font-size:11px; color:#38bdf8; display:flex; justify-content:space-between;';
+    header.className = 'timeline-header';
     header.innerHTML = `
-      <span>Target: <b>${trackData.plate_number}</b> (${trackData.total_hops} Checkpoints)</span>
-      <span>Total Distance: <b>${trackData.total_distance_km} km</b></span>
+      <span>Target <b>${esc(trackData.plate_number)}</b> · ${trackData.total_hops} checkpoints
+        · ${trackData.total_detections} frames</span>
+      <span>${esc(trackData.total_distance_km)} km tracked</span>
     `;
     this.container.appendChild(header);
 
+    if (trackData.implausible_legs) {
+      const warn = document.createElement('div');
+      warn.className = 'timeline-warning';
+      warn.textContent = `${trackData.implausible_legs} leg(s) below need manual verification — the implied speed is not physically achievable.`;
+      this.container.appendChild(warn);
+    }
+
     trackData.timeline.forEach((hop, idx) => {
-      const card = document.createElement('div');
-      card.className = 'timeline-card';
-
-      const isStart = idx === 0;
-      const isEnd = idx === trackData.timeline.length - 1;
-      const borderCol = isStart ? '#10b981' : isEnd ? '#ef4444' : '#38bdf8';
-      card.style.borderLeftColor = borderCol;
-
-      const deltaText = hop.transit_time_formatted
-        ? `<div class="timeline-delta">⏱ ${hop.transit_time_formatted} • ${hop.distance_from_prev_km} km (${hop.est_speed_kmh} km/h)</div>`
-        : `<div class="timeline-delta" style="color:#10b981;">📍 Route Origin</div>`;
-
-      const snapshotHtml = hop.snapshot_path
-        ? `<img src="${hop.snapshot_path}" class="timeline-thumb" alt="Crop" onclick="window.open('${hop.snapshot_path}')"/>`
-        : `<div style="width:48px; height:32px; background:#1e293b; border-radius:3px; display:flex; align-items:center; justify-content:center; font-size:9px; color:#64748b;">NO CROP</div>`;
-
-      card.innerHTML = `
-        <div class="hop-badge" style="background:${borderCol};">
-          ${hop.hop_index}
-        </div>
-        <div class="timeline-info">
-          <div class="timeline-camera-name">${hop.camera_name}</div>
-          <div class="timeline-dept">${hop.department} (${hop.district})</div>
-          ${deltaText}
-        </div>
-        <div class="timeline-metrics">
-          <div class="timeline-time">${new Date(hop.first_seen).toLocaleTimeString()}</div>
-          <div style="font-size:9px; color:#94a3b8;">${hop.detection_count} frames</div>
-        </div>
-        ${snapshotHtml}
-      `;
-
-      this.container.appendChild(card);
+      this.container.appendChild(this.buildHopCard(hop, idx, trackData.timeline.length));
     });
+  }
+
+  buildHopCard(hop, idx, total) {
+    const esc = Utils.esc.bind(Utils);
+    const isStart = idx === 0;
+    const isEnd = idx === total - 1;
+    const borderCol = isStart ? 'var(--status-online)' : isEnd ? 'var(--status-alert)' : 'var(--accent-cyan)';
+
+    const card = document.createElement('div');
+    card.className = 'timeline-card';
+    if (hop.speed_implausible) card.classList.add('is-implausible');
+    card.style.borderLeftColor = borderCol;
+
+    let deltaText;
+    if (hop.transit_time_formatted) {
+      const speed = hop.est_speed_kmh === null ? 'instantaneous' : `${esc(hop.est_speed_kmh)} km/h`;
+      deltaText = `<div class="timeline-delta ${hop.speed_implausible ? 'delta-warn' : ''}">
+          ⏱ ${esc(hop.transit_time_formatted)} · ${esc(hop.distance_from_prev_km)} km · ${speed}
+          ${hop.speed_implausible ? '<b class="implausible-tag">IMPLAUSIBLE</b>' : ''}
+        </div>`;
+    } else {
+      deltaText = '<div class="timeline-delta delta-origin">📍 Route origin</div>';
+    }
+
+    const dwell = hop.dwell_seconds
+      ? ` · dwell ${esc(Utils.formatDuration(hop.dwell_seconds))}`
+      : '';
+
+    card.innerHTML = `
+      <div class="hop-badge" style="background:${borderCol};">${esc(hop.hop_index)}</div>
+      <div class="timeline-info">
+        <div class="timeline-camera-name">${esc(hop.camera_name)}</div>
+        <div class="timeline-dept">${esc(hop.department)} · ${esc(hop.district)}</div>
+        ${deltaText}
+      </div>
+      <div class="timeline-metrics">
+        <div class="timeline-time" title="${esc(Utils.formatDateTime(hop.first_seen))}">
+          ${esc(Utils.formatTime(hop.first_seen))}
+        </div>
+        <div class="timeline-frames">${esc(hop.detection_count)} frames${dwell}</div>
+      </div>
+    `;
+
+    const thumbWrap = document.createElement('div');
+    if (hop.snapshot_path) {
+      const img = document.createElement('img');
+      img.className = 'timeline-thumb';
+      img.src = hop.snapshot_path;
+      img.alt = `Snapshot at ${hop.camera_name}`;
+      img.addEventListener('click', () => window.open(hop.snapshot_path, '_blank', 'noopener'));
+      thumbWrap.appendChild(img);
+    } else {
+      thumbWrap.className = 'timeline-nothumb';
+      thumbWrap.textContent = 'NO CROP';
+    }
+    card.appendChild(thumbWrap);
+
+    card.addEventListener('click', () => {
+      if (this.gisMap) this.gisMap.focusHop(hop.hop_index);
+    });
+
+    return card;
   }
 
   openDocketModal() {
@@ -107,59 +154,77 @@ class VehicleTracker {
     const body = document.getElementById('docket-modal-body');
     if (!modal || !body) return;
 
+    const esc = Utils.esc.bind(Utils);
     const t = this.currentTrackData;
-    let hopsTable = '';
-    t.timeline.forEach(h => {
-      hopsTable += `
-        <tr style="border-bottom: 1px solid #334155;">
-          <td style="padding:6px;">#${h.hop_index}</td>
-          <td style="padding:6px;"><b>${h.camera_name}</b><br><small>${h.department}</small></td>
-          <td style="padding:6px;">${new Date(h.first_seen).toLocaleString()}</td>
-          <td style="padding:6px;">${h.transit_time_formatted || 'Origin Point'}</td>
-          <td style="padding:6px;">${h.est_speed_kmh ? h.est_speed_kmh + ' km/h' : '-'}</td>
-        </tr>
-      `;
-    });
+
+    const rows = t.timeline.map((h) => `
+      <tr>
+        <td>#${esc(h.hop_index)}</td>
+        <td><b>${esc(h.camera_name)}</b><br><small>${esc(h.department)}</small></td>
+        <td>${esc(Utils.formatDateTime(h.first_seen))}</td>
+        <td>${esc(h.transit_time_formatted || 'Origin point')}</td>
+        <td>${h.est_speed_kmh === null || h.est_speed_kmh === undefined ? '—' : esc(h.est_speed_kmh) + ' km/h'}
+            ${h.speed_implausible ? '<b class="implausible-tag">VERIFY</b>' : ''}</td>
+        <td>${esc(h.detection_count)}</td>
+      </tr>
+    `).join('');
+
+    const caveat = t.implausible_legs
+      ? `<div class="docket-caveat">
+           <b>Verification required:</b> ${esc(t.implausible_legs)} transit leg(s) in this record imply speeds
+           that are not physically achievable between the stated locations. Treat those legs as an
+           unverified automated reading — a plate misread or a cloned plate produces exactly this pattern.
+         </div>`
+      : '';
 
     body.innerHTML = `
-      <div style="font-family: monospace; border-bottom:2px solid #0284c7; padding-bottom:12px; margin-bottom:16px;">
-        <h2 style="color:#38bdf8; margin-bottom:4px;">GUJARAT STATE POLICE — EVIDENTIARY SURVEILLANCE REPORT</h2>
-        <p style="color:#94a3b8; font-size:11px;">Generated by Gujarat Unified CCTV Command & Video Analytics System (Model 2/Model 1)</p>
-        <p style="color:#94a3b8; font-size:11px;">Date & Time: ${new Date().toLocaleString()} | Target: <b>${t.plate_number}</b></p>
+      <div class="docket-head">
+        <h2>GUJARAT STATE POLICE — EVIDENTIARY SURVEILLANCE REPORT</h2>
+        <p>Generated by the Unified CCTV Command &amp; Video Analytics System (Model 1 + Model 2)</p>
+        <p>Generated ${esc(Utils.formatDateTime(this.lastQueriedAt))} · Target
+           <b>${esc(t.plate_number)}</b></p>
       </div>
 
-      <div style="display:grid; grid-template-columns: repeat(3, 1fr); gap:12px; margin-bottom:16px;">
-        <div style="background:#0f172a; padding:10px; border-radius:6px; border:1px solid #334155;">
-          <small style="color:#94a3b8;">Total Checkpoints</small>
-          <div style="font-size:18px; font-weight:bold; color:#f8fafc;">${t.total_hops}</div>
+      ${caveat}
+
+      <div class="docket-stats">
+        <div class="docket-stat">
+          <small>Checkpoints</small>
+          <div>${esc(t.total_hops)}</div>
         </div>
-        <div style="background:#0f172a; padding:10px; border-radius:6px; border:1px solid #334155;">
-          <small style="color:#94a3b8;">Total Tracked Distance</small>
-          <div style="font-size:18px; font-weight:bold; color:#f8fafc;">${t.total_distance_km} km</div>
+        <div class="docket-stat">
+          <small>Tracked distance</small>
+          <div>${esc(t.total_distance_km)} km</div>
         </div>
-        <div style="background:#0f172a; padding:10px; border-radius:6px; border:1px solid #334155;">
-          <small style="color:#94a3b8;">First Recorded Sighting</small>
-          <div style="font-size:13px; font-weight:bold; color:#10b981;">${new Date(t.first_observed).toLocaleTimeString()}</div>
+        <div class="docket-stat">
+          <small>First sighting</small>
+          <div class="docket-stat-sm">${esc(Utils.formatDateTime(t.first_observed))}</div>
+        </div>
+        <div class="docket-stat">
+          <small>Last sighting</small>
+          <div class="docket-stat-sm">${esc(Utils.formatDateTime(t.last_observed))}</div>
         </div>
       </div>
 
-      <h4 style="margin-bottom:8px; color:#38bdf8;">Chronological Movement Ledger:</h4>
-      <table style="width:100%; border-collapse:collapse; font-size:12px; text-align:left;">
+      <h4 class="docket-section">Chronological movement ledger</h4>
+      <table class="docket-table">
         <thead>
-          <tr style="background:#1e293b; color:#94a3b8;">
-            <th style="padding:6px;">Hop</th>
-            <th style="padding:6px;">Location / Department</th>
-            <th style="padding:6px;">Timestamp</th>
-            <th style="padding:6px;">Transit Delta</th>
-            <th style="padding:6px;">Est. Speed</th>
+          <tr>
+            <th>Hop</th><th>Location / Department</th><th>Timestamp (IST)</th>
+            <th>Transit delta</th><th>Est. speed</th><th>Frames</th>
           </tr>
         </thead>
-        <tbody>
-          ${hopsTable}
-        </tbody>
+        <tbody>${rows}</tbody>
       </table>
+
+      <p class="docket-footnote">
+        All timestamps are rendered in India Standard Time from UTC records. Estimated speeds are derived
+        from straight-line distance between camera positions and are indicative, not measured.
+      </p>
     `;
 
     modal.style.display = 'flex';
   }
 }
+
+window.VehicleTracker = VehicleTracker;

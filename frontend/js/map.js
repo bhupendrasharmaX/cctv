@@ -6,114 +6,160 @@ class GISMap {
     this.cameraLayer = null;
     this.routeLayer = null;
     this.cameraMarkers = {};
+    this.hopMarkers = {};
+    this.pulseTimers = {};
   }
 
   init() {
     // Center initially on Ahmedabad/Gandhinagar corridor, Gujarat
     this.map = L.map(this.containerId, {
       zoomControl: true,
-      attributionControl: false
+      attributionControl: true,
     }).setView([23.0489, 72.5054], 11);
 
-    // High-contrast Dark Matter CartoDB tiles
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+    // CARTO's dark_all basemap now stamps "API KEY REQUIRED" across every tile,
+    // which is not something to hand a jury. Standard OSM tiles need no key;
+    // the control-room dark treatment is applied in CSS over the tile pane.
+    // OSM's tile policy requires the attribution, so it stays switched on.
+    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
       maxZoom: 19,
-      subdomains: 'abcd',
+      attribution: '&copy; OpenStreetMap contributors',
     }).addTo(this.map);
 
     this.cameraLayer = L.layerGroup().addTo(this.map);
     this.routeLayer = L.layerGroup().addTo(this.map);
   }
 
+  setCamerasVisible(visible) {
+    if (!this.map || !this.cameraLayer) return;
+    if (visible) {
+      this.cameraLayer.addTo(this.map);
+    } else {
+      this.map.removeLayer(this.cameraLayer);
+    }
+  }
+
+  _cameraIcon(status) {
+    const offline = String(status || '').toUpperCase() !== 'ONLINE';
+    // Colour by connectivity: a registry that paints every camera green whether
+    // or not it is reachable is worse than no status at all.
+    const fill = offline ? 'rgba(148, 163, 184, 0.85)' : 'rgba(6, 182, 212, 0.9)';
+    const glow = offline ? 'rgba(148, 163, 184, 0.5)' : 'rgba(6, 182, 212, 0.8)';
+    return L.divIcon({
+      className: 'custom-cam-icon',
+      html: `
+        <div class="cam-pin" style="background:${fill}; box-shadow:0 0 10px ${glow};">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.5">
+            <path d="M23 7l-7 5 7 5V7z"/>
+            <rect x="1" y="5" width="15" height="14" rx="2" ry="2"/>
+          </svg>
+        </div>
+      `,
+      iconSize: [22, 22],
+      iconAnchor: [11, 11],
+    });
+  }
+
   renderCameras(geojsonData) {
     this.cameraLayer.clearLayers();
     this.cameraMarkers = {};
 
-    const features = geojsonData.features || [];
-    features.forEach(f => {
+    const esc = Utils.esc.bind(Utils);
+    (geojsonData.features || []).forEach((f) => {
       const [lng, lat] = f.geometry.coordinates;
       const props = f.properties;
+      const offline = String(props.status || '').toUpperCase() !== 'ONLINE';
 
-      // Custom SVG Camera Pin
-      const icon = L.divIcon({
-        className: 'custom-cam-icon',
-        html: `
-          <div style="
-            background: rgba(6, 182, 212, 0.9);
-            border: 2px solid #ffffff;
-            border-radius: 50%;
-            width: 22px;
-            height: 22px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            box-shadow: 0 0 10px rgba(6, 182, 212, 0.8);
-            cursor: pointer;
-          ">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2.5">
-              <path d="M23 7l-7 5 7 5V7z"/>
-              <rect x="1" y="5" width="15" height="14" rx="2" ry="2"/>
-            </svg>
-          </div>
-        `,
-        iconSize: [22, 22],
-        iconAnchor: [11, 11]
-      });
+      const marker = L.marker([lat, lng], { icon: this._cameraIcon(props.status) }).addTo(this.cameraLayer);
 
-      const marker = L.marker([lat, lng], { icon }).addTo(this.cameraLayer);
-
-      const popupContent = `
-        <div style="font-family: sans-serif; color: #0f172a; min-width: 200px;">
-          <h4 style="margin:0 0 4px; font-size:13px; color:#0284c7;">${props.name}</h4>
-          <p style="margin:0 0 2px; font-size:11px;"><b>ID:</b> ${props.camera_id}</p>
-          <p style="margin:0 0 2px; font-size:11px;"><b>Department:</b> ${props.department}</p>
-          <p style="margin:0 0 2px; font-size:11px;"><b>Type:</b> ${props.camera_type} (${props.codec})</p>
-          <p style="margin:0 0 6px; font-size:11px;"><b>Status:</b> <span style="color:green;font-weight:bold;">${props.status}</span></p>
-          <button style="background:#0284c7; color:white; border:none; border-radius:4px; padding:3px 8px; font-size:10px; cursor:pointer;"
-            onclick="UnifiedViewer.focusCamera('${props.camera_id}')">View Stream</button>
-        </div>
+      // Popups are built as DOM so the "View Stream" action can be a real
+      // listener instead of an inline handler carrying interpolated data.
+      const popup = document.createElement('div');
+      popup.className = 'map-popup';
+      popup.innerHTML = `
+        <h4>${esc(props.name)}</h4>
+        <p><b>ID:</b> ${esc(props.camera_id)}</p>
+        <p><b>Department:</b> ${esc(props.department)}</p>
+        <p><b>District:</b> ${esc(props.district)}</p>
+        <p><b>Type:</b> ${esc(props.camera_type)} (${esc(props.codec)})</p>
+        <p><b>Status:</b> <span style="color:${offline ? '#64748b' : '#10b981'};font-weight:700;">
+          ${esc(props.status)}</span></p>
+        ${props.location_description ? `<p class="popup-desc">${esc(props.location_description)}</p>` : ''}
       `;
 
-      marker.bindPopup(popupContent);
+      const btn = document.createElement('button');
+      btn.className = 'popup-btn';
+      btn.textContent = 'View Stream';
+      btn.addEventListener('click', () => {
+        if (window.viewer) window.viewer.focusCamera(props.camera_id);
+      });
+      popup.appendChild(btn);
+
+      marker.bindPopup(popup);
       this.cameraMarkers[props.camera_id] = marker;
     });
   }
 
-  highlightAlertCamera(cameraId) {
+  highlightAlertCamera(cameraId, pulse = false) {
     const marker = this.cameraMarkers[cameraId];
-    if (marker) {
-      marker.openPopup();
-      this.map.panTo(marker.getLatLng(), { animate: true, duration: 1.0 });
-    }
+    if (!marker) return;
+    marker.openPopup();
+    this.map.panTo(marker.getLatLng(), { animate: true, duration: 1.0 });
+
+    if (!pulse) return;
+    const el = marker.getElement();
+    if (!el) return;
+    el.classList.add('cam-pin-alert');
+    clearTimeout(this.pulseTimers[cameraId]);
+    this.pulseTimers[cameraId] = setTimeout(() => el.classList.remove('cam-pin-alert'), 9000);
+  }
+
+  clearRoute() {
+    this.routeLayer.clearLayers();
+    this.hopMarkers = {};
+  }
+
+  focusHop(hopIndex) {
+    const marker = this.hopMarkers[hopIndex];
+    if (!marker) return;
+    this.map.panTo(marker.getLatLng(), { animate: true });
+    marker.openPopup();
   }
 
   plotVehicleRoute(routeData) {
-    this.routeLayer.clearLayers();
+    this.clearRoute();
+    const hops = (routeData && routeData.timeline) || [];
+    if (!hops.length) return;
 
-    if (!routeData || !routeData.timeline || routeData.timeline.length === 0) {
-      return;
+    const esc = Utils.esc.bind(Utils);
+    const latlngs = hops.map((h) => [h.latitude, h.longitude]);
+
+    // Draw the route leg by leg so an implausible transit can be drawn
+    // differently from a leg the vehicle could actually have travelled.
+    for (let i = 1; i < hops.length; i += 1) {
+      const leg = [latlngs[i - 1], latlngs[i]];
+      const implausible = hops[i].speed_implausible;
+
+      L.polyline(leg, {
+        color: implausible ? '#ef4444' : '#06b6d4',
+        weight: 8,
+        opacity: implausible ? 0.25 : 0.35,
+      }).addTo(this.routeLayer);
+
+      L.polyline(leg, {
+        color: implausible ? '#ef4444' : '#38bdf8',
+        weight: 4,
+        opacity: 0.9,
+        dashArray: implausible ? '2, 10' : '8, 8',
+        lineCap: 'round',
+      }).addTo(this.routeLayer).bindTooltip(
+        implausible
+          ? `Leg ${i}: implied speed not achievable — verify`
+          : `Leg ${i}: ${hops[i].transit_time_formatted} · ${hops[i].est_speed_kmh} km/h`,
+        { direction: 'top', sticky: true },
+      );
     }
 
-    const hops = routeData.timeline;
-    const latlngs = hops.map(h => [h.latitude, h.longitude]);
-
-    // 1. Draw glowing polyline connecting the camera hops
-    const polyline = L.polyline(latlngs, {
-      color: '#38bdf8',
-      weight: 4,
-      opacity: 0.85,
-      dashArray: '8, 8',
-      lineCap: 'round'
-    }).addTo(this.routeLayer);
-
-    // Glow underlay
-    L.polyline(latlngs, {
-      color: '#06b6d4',
-      weight: 8,
-      opacity: 0.35
-    }).addTo(this.routeLayer);
-
-    // 2. Add numbered hop markers (Hop 1, Hop 2, Hop 3...)
     hops.forEach((hop, idx) => {
       const isStart = idx === 0;
       const isEnd = idx === hops.length - 1;
@@ -123,49 +169,43 @@ class GISMap {
       const hopIcon = L.divIcon({
         className: 'route-hop-icon',
         html: `
-          <div style="
-            background: ${badgeColor};
-            border: 2px solid #ffffff;
-            border-radius: 12px;
-            padding: 2px 8px;
-            font-size: 11px;
-            font-weight: 800;
-            color: white;
-            box-shadow: 0 0 12px ${badgeColor};
-            white-space: nowrap;
-            display: flex;
-            align-items: center;
-            gap: 4px;
-          ">
-            <span>#${hop.hop_index}</span>
-            <small style="font-size:9px;">${label}</small>
+          <div class="hop-pin" style="background:${badgeColor}; box-shadow:0 0 12px ${badgeColor};">
+            <span>#${esc(hop.hop_index)}</span>
+            <small>${esc(label)}</small>
           </div>
         `,
-        iconAnchor: [30, 12]
+        iconAnchor: [30, 12],
       });
 
-      const hopMarker = L.marker([hop.latitude, hop.longitude], { icon: hopIcon }).addTo(this.routeLayer);
+      const marker = L.marker([hop.latitude, hop.longitude], { icon: hopIcon }).addTo(this.routeLayer);
 
       const transitInfo = hop.transit_time_formatted
-        ? `<p style="margin:2px 0; font-size:11px;"><b>Transit from Prev:</b> ${hop.transit_time_formatted} (${hop.est_speed_kmh} km/h)</p>`
+        ? `<p><b>Transit from previous:</b> ${esc(hop.transit_time_formatted)}
+             (${hop.est_speed_kmh === null ? 'instantaneous' : esc(hop.est_speed_kmh) + ' km/h'})
+             ${hop.speed_implausible ? '<b style="color:#b91c1c;"> — VERIFY</b>' : ''}</p>`
         : '';
 
-      const hopPopup = `
-        <div style="font-family: sans-serif; color: #0f172a; min-width: 220px;">
-          <h4 style="margin:0 0 4px; font-size:13px; color:${badgeColor};">Checkpoint #${hop.hop_index}: ${hop.camera_name}</h4>
-          <p style="margin:2px 0; font-size:11px;"><b>Department:</b> ${hop.department}</p>
-          <p style="margin:2px 0; font-size:11px;"><b>First Seen:</b> ${new Date(hop.first_seen).toLocaleTimeString()}</p>
-          <p style="margin:2px 0; font-size:11px;"><b>Last Seen:</b> ${new Date(hop.last_seen).toLocaleTimeString()}</p>
+      marker.bindPopup(`
+        <div class="map-popup">
+          <h4 style="color:${badgeColor};">Checkpoint #${esc(hop.hop_index)}: ${esc(hop.camera_name)}</h4>
+          <p><b>Department:</b> ${esc(hop.department)}</p>
+          <p><b>First seen:</b> ${esc(Utils.formatDateTime(hop.first_seen))}</p>
+          <p><b>Last seen:</b> ${esc(Utils.formatDateTime(hop.last_seen))}</p>
+          <p><b>Frames:</b> ${esc(hop.detection_count)}</p>
           ${transitInfo}
-          ${hop.snapshot_path ? `<img src="${hop.snapshot_path}" style="width:100%; border-radius:4px; margin-top:6px;"/>` : ''}
+          ${hop.snapshot_path ? `<img class="popup-thumb" src="${esc(hop.snapshot_path)}" alt="Snapshot"/>` : ''}
         </div>
-      `;
-      hopMarker.bindPopup(hopPopup);
+      `);
+
+      this.hopMarkers[hop.hop_index] = marker;
     });
 
-    // 3. Smoothly zoom and fit map bounds to the route
-    if (latlngs.length > 0) {
-      this.map.fitBounds(polyline.getBounds(), { padding: [60, 60], animate: true });
+    if (latlngs.length === 1) {
+      this.map.setView(latlngs[0], 14, { animate: true });
+    } else {
+      this.map.fitBounds(L.latLngBounds(latlngs), { padding: [60, 60], animate: true });
     }
   }
 }
+
+window.GISMap = GISMap;

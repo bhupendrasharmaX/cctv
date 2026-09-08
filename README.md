@@ -92,3 +92,42 @@ python run.py --host 0.0.0.0 --port 8000
 ### 4. Access the Dashboard
 - **Command Dashboard:** [http://localhost:8000](http://localhost:8000)
 - **Interactive Swagger Docs:** [http://localhost:8000/docs](http://localhost:8000/docs)
+
+### 5. Load a Demo Journey
+With no government gateway reachable, the platform seeds a representative Gujarat camera
+catalogue. To also populate a cross-camera journey to trace:
+```bash
+python run.py --simulate-demo
+```
+Then search `GJ01AB1234` in the investigation panel.
+
+### 6. Run the Tests
+```bash
+pip install -r requirements-dev.txt
+python -m pytest tests/ -q
+```
+
+---
+
+## ⚙️ Configuration
+
+All settings are environment variables with working defaults:
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `DATABASE_URL` | `sqlite:///data/cctv.db` | Datastore. SQLite runs in WAL mode with a busy timeout. |
+| `GOVT_GATEWAY_HOST` | `localhost` | Gateway host for `/api/ingest` and stream URLs. |
+| `AI_FRAME_SKIP` | `8` | Process 1 frame in N (~3 FPS on a 25 FPS stream). |
+| `ALERT_COOLDOWN_SECONDS` | `120` | Repeat sightings of one plate at one camera fold into the existing alert. |
+| `HOP_GROUPING_WINDOW_SECONDS` | `120` | Sightings at one camera inside this window are a single visit. |
+| `IMPLAUSIBLE_SPEED_KMH` | `160` | Inter-camera speeds above this are flagged for manual verification. |
+| `CORS_ALLOW_ORIGINS` | *(empty)* | Comma-separated extra origins. Same-origin needs no entry. |
+
+---
+
+## ⚠️ Before Any Real Deployment
+
+This platform currently has **no authentication**. Every endpoint — the camera registry including
+RTSP URLs, the watchlist with owner names and FIR numbers, and AI worker control — is open to
+anyone who can reach the port. Keep it on localhost or behind an authenticating reverse proxy
+until access control is added. `docs/PROGRESS.md` tracks this and the other known gaps.
