@@ -832,3 +832,60 @@ button:disabled {
 }
 
 .leaflet-control-attribution a { color: var(--text-secondary) !important; }
+
+/* ---------------- Access gate ---------------- */
+.token-gate { backdrop-filter: blur(14px); }
+
+.token-gate-card {
+  width: 380px;
+  max-width: 92vw;
+}
+
+.token-gate-body {
+  padding: 28px 26px;
+  text-align: center;
+}
+
+.token-gate-body .police-emblem {
+  margin: 0 auto 14px;
+}
+
+.token-gate-body h3 {
+  font-size: 15px;
+  color: var(--text-primary);
+  margin-bottom: 6px;
+}
+
+.token-gate-body > p {
+  font-size: 11px;
+  line-height: 1.55;
+  color: var(--text-secondary);
+  margin-bottom: 16px;
+}
+
+#token-form {
+  display: flex;
+  gap: 6px;
+}
+
+#token-input {
+  flex: 1;
+  background: #0b1220;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  font-family: var(--font-family);
+  font-size: 12px;
+  padding: 8px 10px;
+}
+
+#token-input:focus {
+  border-color: var(--border-bright);
+  outline: none;
+}
+
+.token-gate-error {
+  margin-top: 10px;
+  font-size: 11px;
+  color: var(--status-alert);
+}

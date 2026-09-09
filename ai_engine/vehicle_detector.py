@@ -1,4 +1,3 @@
-import torch
 import logging
 from typing import List, Dict, Any, Tuple
 import numpy as np
@@ -12,11 +11,17 @@ class VehicleDetector:
     Filters exclusively for vehicles: car, motorcycle, bus, truck.
     """
     def __init__(self, model_name: str = "yolov8n.pt", conf_thresh: float = 0.35):
+        # torch and ultralytics are imported here rather than at module scope so
+        # the registry, dashboard and API can run (and be tested) without the
+        # multi-gigabyte ML stack installed. Only starting an AI worker needs it.
+        import torch
+
         self.conf_thresh = conf_thresh
         self.device = "cuda:0" if torch.cuda.is_available() else "cpu"
         logger.info(f"Initializing VehicleDetector on device: {self.device}")
 
         from ultralytics import YOLO
+        # Ultralytics downloads the weights on first use if they are not present.
         self.model = YOLO(model_name)
         # COCO class IDs: 2: car, 3: motorcycle, 5: bus, 7: truck
         self.target_classes = {2: "CAR", 3: "MOTORCYCLE", 5: "BUS", 7: "TRUCK"}

@@ -2,14 +2,16 @@ import asyncio
 import logging
 from pathlib import Path
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import Depends, FastAPI, Query, WebSocket, WebSocketDisconnect, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from backend.app.config import SNAPSHOT_DIR, DATA_DIR, CORS_ALLOW_ORIGINS
 from backend.app.database import init_db, SessionLocal
+from backend.app.security import auth_enabled, log_auth_status, require_token, websocket_token_ok
 from backend.app.services.catalogue import sync_catalogue_with_db
 from backend.app.services.alert_engine import ws_manager, register_event_loop
+from backend.app.services.retention import prune_snapshots
 from backend.app.routers import registry, search, watchlist, alerts, stream_control
 
 # Configure system-wide logging
@@ -19,10 +21,27 @@ logging.basicConfig(
 )
 logger = logging.getLogger("cctv.main")
 
+# Snapshots accumulate on every detection, so pruning runs on a timer rather
+# than only at startup -- a control room server stays up for weeks at a time.
+SNAPSHOT_PRUNE_INTERVAL_SECONDS = 6 * 60 * 60
+
+
+async def _snapshot_retention_loop():
+    while True:
+        try:
+            await asyncio.sleep(SNAPSHOT_PRUNE_INTERVAL_SECONDS)
+            await asyncio.to_thread(prune_snapshots)
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            logger.error(f"Snapshot retention pass failed: {e}")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup sequence
     logger.info("Initializing Gujarat CCTV Unified Analytics & Command Platform...")
+    log_auth_status()
 
     # Hand the running loop to the alert engine. Detections are produced from
     # threads (stream workers, and FastAPI's threadpool for sync endpoints), so
@@ -50,10 +69,19 @@ async def lifespan(app: FastAPI):
     finally:
         db.close()
 
+    prune_snapshots()
+    retention_task = asyncio.create_task(_snapshot_retention_loop())
+
     yield
 
     # Shutdown sequence
     logger.info("Shutting down CCTV platform services...")
+    retention_task.cancel()
+    try:
+        await retention_task
+    except asyncio.CancelledError:
+        pass
+
     from ai_engine.multi_stream_runner import stream_pool
     stream_pool.stop_all()
 
@@ -61,7 +89,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="Gujarat Police Unified CCTV & Video Analytics Platform",
     description="Unified Viewing, AI ANPR, Cross-Camera Vehicle Tracking & Real-Time Alert Command Center (Model 2 + Model 1)",
-    version="2.1.0",
+    version="2.2.0",
     lifespan=lifespan
 )
 
@@ -78,20 +106,27 @@ if CORS_ALLOW_ORIGINS:
         allow_headers=["*"],
     )
 
-# Mount API routers
-app.include_router(registry.router)
-app.include_router(search.router)
-app.include_router(watchlist.router)
-app.include_router(alerts.router)
-app.include_router(stream_control.router)
+# Mount API routers behind the shared-token guard. The guard is a no-op unless
+# SENTINEL_API_TOKEN is configured, so local development is unaffected.
+guarded = [Depends(require_token)]
+app.include_router(registry.router, dependencies=guarded)
+app.include_router(search.router, dependencies=guarded)
+app.include_router(watchlist.router, dependencies=guarded)
+app.include_router(alerts.router, dependencies=guarded)
+app.include_router(stream_control.router, dependencies=guarded)
 
 
 @app.get("/api/health", tags=["System"])
 def health_check():
-    """Liveness probe plus live client/worker counts for the dashboard header."""
+    """
+    Liveness probe plus live client/worker counts for the dashboard header.
+    Deliberately unauthenticated so a load balancer can reach it, and
+    deliberately free of any registry or watchlist detail.
+    """
     from ai_engine.multi_stream_runner import stream_pool
     return {
         "status": "healthy",
+        "auth_required": auth_enabled(),
         "dashboard_clients": len(ws_manager.active_connections),
         "ai_workers": stream_pool.get_status(),
     }
@@ -99,7 +134,13 @@ def health_check():
 
 # Real-time WebSocket connection for live alerts and detections
 @app.websocket("/ws/alerts")
-async def websocket_alerts_endpoint(websocket: WebSocket):
+async def websocket_alerts_endpoint(websocket: WebSocket, token: str = Query(default=None)):
+    # Browsers cannot set headers on a WebSocket handshake, so the token
+    # arrives as a query parameter. Reject before accepting the connection.
+    if not websocket_token_ok(token):
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+        return
+
     await ws_manager.connect(websocket)
     try:
         while True:

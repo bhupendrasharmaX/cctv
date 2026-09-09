@@ -30,6 +30,23 @@
   <!-- Toast host: non-blocking replacement for window.alert() -->
   <div id="toast-host" class="toast-host" aria-live="polite"></div>
 
+  <!-- Access gate. Only shown when the deployment sets SENTINEL_API_TOKEN. -->
+  <div id="token-gate" class="modal-overlay token-gate">
+    <div class="modal-content token-gate-card" role="dialog" aria-modal="true" aria-label="Platform access">
+      <div class="token-gate-body">
+        <div class="police-emblem">GP</div>
+        <h3>Command Platform Access</h3>
+        <p>This deployment requires a platform token. It is held for this browser session only.</p>
+        <form id="token-form">
+          <input type="password" id="token-input" placeholder="Platform token"
+            autocomplete="current-password" aria-label="Platform token" required>
+          <button type="submit" class="btn-primary">Unlock</button>
+        </form>
+        <p id="token-gate-error" class="token-gate-error" hidden></p>
+      </div>
+    </div>
+  </div>
+
   <!-- Command Header -->
   <header class="header">
     <div class="brand-section">

@@ -1,2 +1,5 @@
+# Test suite. The AI stack is deliberately absent: detector and recognizer
+# imports are lazy, so the API and analytics logic are testable without it.
+-r requirements-core.txt
 pytest>=8.0.0
 httpx>=0.27.0

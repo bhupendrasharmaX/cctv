@@ -1,11 +1,45 @@
 // Centralized API Client & WebSocket Manager
+const TOKEN_STORAGE_KEY = 'sentinel_api_token';
+
 const API = {
   baseUrl: window.location.origin,
+  _token: null,
+
+  /**
+   * Shared platform token, held per browser tab.
+   *
+   * sessionStorage rather than localStorage: on a shared control-room
+   * workstation the token should not outlive the session at that desk.
+   */
+  get token() {
+    if (this._token === null) {
+      try {
+        this._token = sessionStorage.getItem(TOKEN_STORAGE_KEY) || '';
+      } catch (e) {
+        this._token = '';
+      }
+    }
+    return this._token;
+  },
+
+  setToken(value) {
+    this._token = value || '';
+    try {
+      if (this._token) {
+        sessionStorage.setItem(TOKEN_STORAGE_KEY, this._token);
+      } else {
+        sessionStorage.removeItem(TOKEN_STORAGE_KEY);
+      }
+    } catch (e) { /* storage unavailable; token stays in memory */ }
+  },
 
   async _request(path, options = {}) {
+    const headers = { ...(options.headers || {}) };
+    if (this.token) headers.Authorization = `Bearer ${this.token}`;
+
     let res;
     try {
-      res = await fetch(`${this.baseUrl}${path}`, options);
+      res = await fetch(`${this.baseUrl}${path}`, { ...options, headers });
     } catch (networkError) {
       throw new Error('Command server unreachable. Check that the platform is running.');
     }
@@ -22,7 +56,10 @@ const API = {
           detail = body.detail[0].msg || detail;
         }
       } catch (_) { /* non-JSON error body */ }
-      throw new Error(detail);
+
+      const error = new Error(detail);
+      error.status = res.status;
+      throw error;
     }
 
     return res.status === 204 ? null : res.json();
@@ -118,7 +155,10 @@ const API = {
    */
   connectWebSocket(handlers = {}) {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsUrl = `${protocol}//${window.location.host}/ws/alerts`;
+    // A WebSocket handshake carries no custom headers, so the token travels as
+    // a query parameter. It never leaves this origin.
+    const suffix = this.token ? `?token=${encodeURIComponent(this.token)}` : '';
+    const wsUrl = `${protocol}//${window.location.host}/ws/alerts${suffix}`;
 
     let ws = null;
     let attempt = 0;

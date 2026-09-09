@@ -80,6 +80,19 @@ cd cctv
 pip install -r requirements.txt
 ```
 
+Dependencies are layered, because the AI stack is large and only the stream
+workers need it:
+
+| File | Contents | Use when |
+|---|---|---|
+| `requirements-core.txt` | API, dashboard, registry, tracking | Running the command platform without live ANPR |
+| `requirements.txt` | core + YOLOv8 + EasyOCR (pulls torch) | Full deployment with AI analytics |
+| `requirements-dev.txt` | core + pytest | Running the test suite |
+
+YOLO weights are **not** committed; ultralytics downloads `yolov8n.pt` on first
+use. Detector and recognizer imports are lazy, so the API, dashboard and tests
+all run without torch installed.
+
 ### 3. Launch the Server
 ```bash
 python run.py
@@ -122,12 +135,28 @@ All settings are environment variables with working defaults:
 | `HOP_GROUPING_WINDOW_SECONDS` | `120` | Sightings at one camera inside this window are a single visit. |
 | `IMPLAUSIBLE_SPEED_KMH` | `160` | Inter-camera speeds above this are flagged for manual verification. |
 | `CORS_ALLOW_ORIGINS` | *(empty)* | Comma-separated extra origins. Same-origin needs no entry. |
+| `SENTINEL_API_TOKEN` | *(empty)* | Shared platform token. Unset = **open API**. |
+| `SNAPSHOT_RETENTION_DAYS` | `30` | Age limit for evidence crops. `0` disables. |
+| `SNAPSHOT_MAX_FILES` | `20000` | Ceiling on stored crops, oldest pruned first. `0` disables. |
 
 ---
 
-## ⚠️ Before Any Real Deployment
+## 🔒 Access Control
 
-This platform currently has **no authentication**. Every endpoint — the camera registry including
-RTSP URLs, the watchlist with owner names and FIR numbers, and AI worker control — is open to
-anyone who can reach the port. Keep it on localhost or behind an authenticating reverse proxy
-until access control is added. `docs/PROGRESS.md` tracks this and the other known gaps.
+Set `SENTINEL_API_TOKEN` and every `/api` route except `/api/health` requires it, as does the
+alert WebSocket. The dashboard prompts for the token once and holds it for the browser session.
+
+```bash
+SENTINEL_API_TOKEN="$(python -c 'import secrets; print(secrets.token_urlsafe(32))')" python run.py
+```
+
+```bash
+curl -H "Authorization: Bearer $SENTINEL_API_TOKEN" http://localhost:8000/api/cameras
+```
+
+Leaving it unset keeps the API open and logs a warning at startup, which is fine for local
+development and nothing else.
+
+**This is a stopgap, not an identity system.** A single shared token gives no per-officer audit
+trail and no revocation short of rotating it. Real deployment needs proper identity — tracked in
+`docs/PROGRESS.md` along with the other known gaps.

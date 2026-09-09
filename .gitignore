@@ -57,3 +57,6 @@ data/snapshots/*
 
 # Test artifacts
 .pytest_cache/
+
+# YOLO weights: ultralytics downloads these on first use
+*.pt

@@ -1,0 +1,14 @@
+# API, registry, GIS dashboard and cross-camera tracking.
+# Everything except the AI inference stack - enough to run the command
+# platform, serve the dashboard and run the test suite.
+fastapi>=0.110.0
+uvicorn>=0.28.0
+websockets>=12.0
+sqlalchemy>=2.0.0
+pydantic>=2.0.0
+requests>=2.31.0
+# Headless build: the platform never calls cv2.imshow, and the GUI variant
+# drags in libGL, which servers and CI images do not have.
+opencv-python-headless>=4.8.0
+pillow>=10.0.0
+numpy>=1.24.0

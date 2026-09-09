@@ -11,6 +11,10 @@ const Dashboard = {
   async init() {
     this.startClock();
 
+    // /api/health is unauthenticated and reports whether a token is required,
+    // so the gate only appears on deployments that actually enforce one.
+    if (!(await this.ensureAuthenticated())) return;
+
     gisMap = new GISMap('map');
     gisMap.init();
     window.gisMap = gisMap;
@@ -31,6 +35,72 @@ const Dashboard = {
     await this.loadFacets();
     await this.loadAlerts();
     await this.refreshWorkerStatus();
+  },
+
+  // ---------------- Access ----------------
+  /**
+   * Returns true once the dashboard may proceed. Shows the token gate and
+   * waits when the deployment requires a token we do not have (or have wrong).
+   */
+  async ensureAuthenticated() {
+    let health;
+    try {
+      health = await API.getHealth();
+    } catch (e) {
+      Utils.toast(e.message, 'error');
+      return true; // Let the rest of the dashboard surface its own errors.
+    }
+
+    if (!health.auth_required) return true;
+
+    while (true) {
+      if (API.token) {
+        try {
+          await API.getAlertStats();  // cheapest guarded call
+          this.hideTokenGate();
+          return true;
+        } catch (e) {
+          if (e.status !== 401) return true;
+          API.setToken('');
+          this.showTokenGate('That token was not accepted. Try again.');
+        }
+      } else {
+        this.showTokenGate();
+      }
+
+      const entered = await this.awaitTokenEntry();
+      API.setToken(entered);
+    }
+  },
+
+  showTokenGate(message) {
+    const gate = document.getElementById('token-gate');
+    if (!gate) return;
+    gate.style.display = 'flex';
+    const note = document.getElementById('token-gate-error');
+    if (note) {
+      note.textContent = message || '';
+      note.hidden = !message;
+    }
+    const input = document.getElementById('token-input');
+    if (input) { input.value = ''; input.focus(); }
+  },
+
+  hideTokenGate() {
+    const gate = document.getElementById('token-gate');
+    if (gate) gate.style.display = 'none';
+  },
+
+  awaitTokenEntry() {
+    return new Promise((resolve) => {
+      const form = document.getElementById('token-form');
+      const handler = (event) => {
+        event.preventDefault();
+        form.removeEventListener('submit', handler);
+        resolve(document.getElementById('token-input').value.trim());
+      };
+      form.addEventListener('submit', handler);
+    });
   },
 
   // ---------------- Clock ----------------

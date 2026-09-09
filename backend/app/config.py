@@ -41,6 +41,15 @@ IMPLAUSIBLE_SPEED_KMH = float(os.getenv("IMPLAUSIBLE_SPEED_KMH", "160.0"))
 # API Safety Limits
 MAX_PAGE_SIZE = int(os.getenv("MAX_PAGE_SIZE", "500"))
 
+# Access control. Unset means the API is open, which is only acceptable on
+# localhost; see backend/app/security.py.
+API_TOKEN = os.getenv("SENTINEL_API_TOKEN", "").strip()
+
+# Snapshot retention. Evidence crops accumulate on every detection and nothing
+# ever removed them; 0 disables pruning.
+SNAPSHOT_RETENTION_DAYS = int(os.getenv("SNAPSHOT_RETENTION_DAYS", "30"))
+SNAPSHOT_MAX_FILES = int(os.getenv("SNAPSHOT_MAX_FILES", "20000"))
+
 # CORS: comma-separated origins. Defaults to same-origin only; the dashboard is
 # served by this same app, so a wildcard buys nothing and exposes the registry.
 CORS_ALLOW_ORIGINS = [

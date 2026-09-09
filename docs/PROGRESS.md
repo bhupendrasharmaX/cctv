@@ -28,7 +28,7 @@
 | **Phase 5** | RTSP ingestion service (health/reconnect) | **DONE** | `StreamWorker` with interruptible exponential backoff |
 | **Phase 6** | Unified multi-camera viewer (grid view, WHEP preview) | **DONE** | 1×1/2×2/3×3 with paging; falls back to a labelled representative feed |
 | **Phase 7** | Vehicle detection (YOLOv8 sampled frames) | **DONE** | `VehicleDetector`, frame-skip throttled |
-| Phase 8 | ANPR (plate detector + OCR, confidence scoring) | PARTIAL | **No plate-localisation stage** — OCR runs on the whole vehicle crop |
+| **Phase 8** | ANPR (plate detector + OCR, confidence scoring) | **DONE** | Morphological plate localisation, then OCR; whole-crop read kept as fallback |
 | **Phase 9** | Detection metadata storage | **DONE** | `detections` table, composite plate+time index |
 | **Phase 10** | Vehicle search by plate (API + UI) | **DONE** | |
 | **Phase 11** | Cross-camera timeline | **DONE** | Time-windowed hop grouping |
@@ -48,11 +48,11 @@
 
 - **Awaiting gateway `<host>`:** `http://localhost/api/ingest` returns connection refused. The
   platform falls back to the offline Gujarat seed catalogue until a host is supplied.
-- **No authentication.** Every endpoint is open: the camera registry (including RTSP URLs), the
-  watchlist, and worker control. This must be closed before the platform is exposed beyond
-  localhost.
-- **No plate localisation.** EasyOCR runs on the full vehicle bounding box, so bumper stickers and
-  dealer decals compete with the plate. This is the single largest available accuracy win.
+- **Authentication is a single shared token.** `SENTINEL_API_TOKEN` guards the API and the alert
+  WebSocket, but it gives no per-officer audit trail and no revocation short of rotation. Real
+  deployment needs proper identity. Leaving the variable unset still means an open API.
+- **ANPR accuracy is unmeasured.** Plate localisation is in place and its geometry is tested, but
+  end-to-end read accuracy needs real Gujarat footage to quantify. No ground-truth set exists yet.
 - **PTS is recorded but not used for analytics.** `CAP_PROP_POS_MSEC` is a per-connection offset
   that resets to zero on reconnect, so it is not comparable across cameras as stored. Route
   timings therefore use `capture_timestamp`. Making PTS authoritative needs an absolute clock
@@ -60,7 +60,9 @@
 - **SQLite, no migrations.** WAL and a busy timeout are enabled, which is enough for a handful of
   workers, but schema changes still require dropping `data/cctv.db`. Postgres + Alembic before
   any multi-user deployment.
-- **Snapshots grow without bound.** No retention policy on `data/snapshots/`.
+- **Retention is time and count based only.** Snapshots prune on age and a file ceiling; there is
+  no per-case hold, so a crop tied to an active investigation can age out. Case-aware retention is
+  needed before this is evidence-grade.
 
 ---
 
@@ -80,6 +82,14 @@
    signature of a misread or cloned plate.
 7. Watchlist alerts have a per-(plate, camera) cooldown; repeat sightings increment a counter on
    the existing alert instead of raising new ones.
+8. **ANPR localises the plate before reading it.** Running OCR across the whole vehicle box fed the
+   reader every painted word on the vehicle. Localisation failure falls back to the old whole-crop
+   read, so the change cannot lose a detection outright.
+9. **Character correction reports how many characters it rewrote**, and confidence is discounted
+   per rewrite. Applied blindly, the correction could manufacture a valid-looking plate out of
+   unrelated lettering and report it at full confidence.
+10. **AI imports are lazy.** torch, ultralytics and easyocr load only when a worker starts, so the
+    API, dashboard and CI run without a multi-gigabyte install. CI asserts this stays true.
 
 ---
 
@@ -90,6 +100,15 @@ pip install -r requirements-dev.txt
 python -m pytest tests/ -q
 ```
 
-Covers plate matching and alert suppression (`test_alert_engine.py`), route reconstruction and
-timestamp handling (`test_route_tracer.py`), and the end-to-end WebSocket alert path
-(`test_live_alert_pipeline.py`).
+48 tests, run in CI on Python 3.10 and 3.12:
+
+| File | Covers |
+|---|---|
+| `test_alert_engine.py` | Plate matching, fuzzy handling, alert suppression |
+| `test_route_tracer.py` | Hop grouping, distance/speed, UTC serialization |
+| `test_live_alert_pipeline.py` | End-to-end WebSocket delivery, SSRF guard |
+| `test_plate_recognizer.py` | Plate validation, character correction, localisation geometry |
+| `test_security.py` | Token enforcement across HTTP and WebSocket |
+| `test_retention.py` | Snapshot pruning by age and count |
+
+CI also asserts the app still imports without torch, ultralytics or easyocr present.
