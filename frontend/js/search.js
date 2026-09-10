@@ -88,7 +88,7 @@ class SightingSearch {
 
       if (!this.results.length) {
         this.setState(`
-          <div class="state-icon">∅</div>
+          <div class="state-icon">&mdash;</div>
           <div>No sightings match these filters.</div>
           <small>${Utils.esc(this.describeFilters(filters))}</small>
         `);
@@ -125,7 +125,7 @@ class SightingSearch {
     this.container.innerHTML = '';
 
     const header = document.createElement('div');
-    header.className = 'timeline-header';
+    header.className = 'result-bar';
     header.innerHTML = `
       <span>${this.results.length} of <b>${esc(this.total)}</b> sightings</span>
       <span>${esc(this.describeFilters(this.lastFilters || {}))}</span>
@@ -133,7 +133,7 @@ class SightingSearch {
     this.container.appendChild(header);
 
     const table = document.createElement('table');
-    table.className = 'search-table';
+    table.className = 'data-table';
     table.innerHTML = `
       <thead>
         <tr>
@@ -150,7 +150,7 @@ class SightingSearch {
 
     if (this.truncated) {
       const more = document.createElement('button');
-      more.className = 'btn-xs load-more';
+      more.className = 'btn load-more';
       more.textContent = `Load more (${this.total - this.results.length} remaining)`;
       more.addEventListener('click', () => this.run(this.results.length));
       this.container.appendChild(more);
@@ -165,23 +165,23 @@ class SightingSearch {
     const weak = Number(row.confidence) < 0.6;
 
     tr.innerHTML = `
-      <td class="cell-time" title="${esc(Utils.formatDateTime(row.capture_timestamp))}">
+      <td class="col-time" title="${esc(Utils.formatDateTime(row.capture_timestamp))}">
         ${esc(Utils.formatTime(row.capture_timestamp))}
       </td>
-      <td><b class="mono-plate">${esc(row.plate_number)}</b></td>
+      <td><b class="col-plate">${esc(row.plate_number)}</b></td>
       <td>
         ${esc(row.camera_name || row.camera_id)}
-        <small class="cell-sub">${esc(row.department || '')}</small>
+        <span class="col-sub">${esc(row.department || '')}</span>
       </td>
       <td>${esc(row.vehicle_type || '—')}</td>
-      <td class="${weak ? 'cell-weak' : ''}">${esc(Number(row.confidence || 0).toFixed(2))}</td>
+      <td class="col-num ${weak ? 'conf-weak' : ''}">${esc(Number(row.confidence || 0).toFixed(2))}</td>
     `;
 
     const actions = document.createElement('td');
-    actions.className = 'cell-actions';
+    actions.className = 'col-actions';
 
     const traceBtn = document.createElement('button');
-    traceBtn.className = 'btn-xs';
+    traceBtn.className = 'btn';
     traceBtn.textContent = 'Trace';
     traceBtn.title = `Reconstruct the full route for ${row.plate_number}`;
     traceBtn.addEventListener('click', (e) => {
@@ -192,7 +192,7 @@ class SightingSearch {
 
     if (row.snapshot_path) {
       const snap = document.createElement('button');
-      snap.className = 'btn-xs';
+      snap.className = 'btn';
       snap.textContent = 'Crop';
       snap.addEventListener('click', (e) => {
         e.stopPropagation();

@@ -72,11 +72,9 @@ class UnifiedViewer {
     tile.classList.toggle('ai-active', on);
     const btn = tile.querySelector('[data-ai-toggle]');
     if (btn) {
-      btn.textContent = on ? 'AI: ON' : 'AI: OFF';
+      btn.textContent = on ? 'AI on' : 'AI off';
       btn.classList.toggle('btn-on', on);
     }
-    const badge = tile.querySelector('[data-ai-badge]');
-    if (badge) badge.hidden = !on;
   }
 
   teardown() {
@@ -143,16 +141,18 @@ class UnifiedViewer {
 
     const offline = String(cam.connectivity_status || '').toUpperCase() !== 'ONLINE';
 
+    // A label strip above the image rather than an overlay floating on it:
+    // the text stays legible whatever the feed happens to be showing.
     tile.innerHTML = `
-      <div class="cam-overlay">
-        <span class="cam-tag" title="${esc(cam.location_description || cam.name)}">
-          ${id} · ${esc(cam.name)}
-        </span>
-        <span class="cam-badges">
-          <span data-ai-badge class="cam-badge cam-badge-ai" hidden>AI</span>
-          <span class="cam-live-indicator ${offline ? 'is-offline' : ''}">
-            <span class="status-dot ${offline ? 'offline' : ''}"></span>
-            ${offline ? esc(cam.connectivity_status) : 'LIVE'}
+      <div class="cam-strip">
+        <span class="cam-id">${id}</span>
+        <span class="cam-sep">|</span>
+        <span class="cam-name" title="${esc(cam.location_description || cam.name)}">${esc(cam.name)}</span>
+        <span class="cam-strip-right">
+          <span class="cam-badge-ai">AI</span>
+          <span class="cam-state">
+            <span class="dot ${offline ? 'dot-idle' : 'dot-ok'}"></span>
+            ${offline ? esc(String(cam.connectivity_status).toUpperCase()) : 'LIVE'}
           </span>
         </span>
       </div>
@@ -160,13 +160,9 @@ class UnifiedViewer {
         <video id="video-${id}" autoplay playsinline muted hidden></video>
         <canvas id="canvas-${id}" width="640" height="360"></canvas>
       </div>
-      <div class="cam-meta-strip">
-        <span>${esc(cam.department)}</span>
-        <span>${esc(cam.camera_type)} · ${esc(cam.codec)}</span>
-      </div>
       <div class="cam-controls">
-        <button class="btn-xs" data-ai-toggle title="Start or stop AI analytics on this feed">AI: OFF</button>
-        <button class="btn-xs" data-focus title="Centre the GIS map on this camera">Focus</button>
+        <button class="btn" data-ai-toggle title="Start or stop AI analytics on this feed">AI off</button>
+        <button class="btn" data-focus title="Centre the map on this camera">Focus</button>
       </div>
     `;
 
@@ -242,10 +238,10 @@ class UnifiedViewer {
       if (token !== this.renderToken || !canvas.isConnected) return;
       frame += 1;
 
-      ctx.fillStyle = '#060a12';
+      ctx.fillStyle = '#0c0e10';
       ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-      ctx.strokeStyle = 'rgba(56, 189, 248, 0.08)';
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.04)';
       ctx.lineWidth = 1;
       for (let x = 0; x < canvas.width; x += 40) {
         ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, canvas.height); ctx.stroke();
@@ -254,12 +250,12 @@ class UnifiedViewer {
         ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(canvas.width, y); ctx.stroke();
       }
 
-      ctx.fillStyle = '#111827';
+      ctx.fillStyle = '#1a1d20';
       ctx.beginPath();
       ctx.moveTo(220, 140); ctx.lineTo(420, 140); ctx.lineTo(580, 360); ctx.lineTo(60, 360);
       ctx.closePath(); ctx.fill();
 
-      ctx.strokeStyle = '#facc15';
+      ctx.strokeStyle = '#4a4a3a';
       ctx.setLineDash([12, 16]);
       ctx.lineDashOffset = -frame * 2;
       ctx.beginPath(); ctx.moveTo(320, 140); ctx.lineTo(320, 360); ctx.stroke();
@@ -269,30 +265,26 @@ class UnifiedViewer {
       if (carPos > 40) {
         const yPos = 180 + (carPos * 0.4);
         const scale = 0.6 + (carPos * 0.002);
-        ctx.fillStyle = 'rgba(59, 130, 246, 0.85)';
+        ctx.fillStyle = 'rgba(150, 158, 166, 0.8)';
         ctx.fillRect(280 - (scale * 20), yPos, 40 * scale, 24 * scale);
-        ctx.fillStyle = 'rgba(254, 240, 138, 0.6)';
+        ctx.fillStyle = 'rgba(224, 200, 140, 0.5)';
         ctx.beginPath();
         ctx.arc(280 - (scale * 15), yPos + (24 * scale), 4 * scale, 0, Math.PI * 2);
         ctx.arc(280 + (scale * 15), yPos + (24 * scale), 4 * scale, 0, Math.PI * 2);
         ctx.fill();
       }
 
-      ctx.fillStyle = '#38bdf8';
+      ctx.fillStyle = '#8b9298';
       ctx.font = '12px monospace';
       ctx.fillText(`CAM: ${cameraId}`, 12, 24);
       ctx.fillText(`${Utils.formatTime(new Date())} IST`, 12, 42);
       ctx.fillText('CODEC: H.264 / TCP', 12, 60);
 
       // Never let a placeholder read as evidence.
-      ctx.fillStyle = 'rgba(148, 163, 184, 0.85)';
+      ctx.fillStyle = 'rgba(224, 163, 64, 0.85)';
       ctx.font = 'bold 11px monospace';
       ctx.fillText('REPRESENTATIVE FEED - NO LIVE STREAM', 12, canvas.height - 14);
 
-      ctx.strokeStyle = 'rgba(6, 182, 212, 0.4)';
-      ctx.lineWidth = 1.5;
-      const scanY = (frame * 2) % canvas.height;
-      ctx.beginPath(); ctx.moveTo(0, scanY); ctx.lineTo(canvas.width, scanY); ctx.stroke();
 
       this.animations[cameraId] = requestAnimationFrame(draw);
     };

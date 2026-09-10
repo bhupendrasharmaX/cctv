@@ -73,6 +73,13 @@ const Utils = {
     return `${Math.floor(seconds / 86400)}d ago`;
   },
 
+  /** "Thu, 11 Sep 2026" in IST, for the clock's second line. */
+  formatDatePart(value) {
+    const d = this.parseDate(value);
+    if (!d) return '';
+    return this._fmt({ weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' }).format(d);
+  },
+
   formatDuration(seconds) {
     if (seconds === null || seconds === undefined) return '--';
     const total = Math.max(0, Math.floor(seconds));
@@ -121,16 +128,6 @@ const Utils = {
   /** Normalize a plate the same way the backend does, so the UI agrees with it. */
   normalizePlate(plate) {
     return String(plate || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
-  },
-
-  /** Colour token for a severity label. */
-  severityColor(severity) {
-    switch (String(severity || '').toUpperCase()) {
-      case 'CRITICAL': return 'var(--status-alert)';
-      case 'HIGH': return 'var(--status-warning)';
-      case 'REVIEW': return 'var(--accent-amber)';
-      default: return 'var(--accent-blue)';
-    }
   },
 
   setText(id, value) {

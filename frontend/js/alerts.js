@@ -1,7 +1,10 @@
-// Real-Time Watchlist Alert Manager
+// Watchlist alert queue.
+//
+// A queue, not a card feed: an operator triages these in order and needs
+// time, plate, camera, category and status on one scannable line.
 class AlertManager {
-  constructor(feedContainerId, sirenBannerId) {
-    this.feedContainer = document.getElementById(feedContainerId);
+  constructor(bodyId, sirenBannerId) {
+    this.body = document.getElementById(bodyId);
     this.sirenBanner = document.getElementById(sirenBannerId);
     this.audioCtx = null;
     this.muted = false;
@@ -27,12 +30,12 @@ class AlertManager {
     this.muted = muted;
     const btn = document.getElementById('btn-mute-siren');
     if (btn) {
-      btn.textContent = muted ? '🔇 Muted' : '🔊 Siren On';
+      btn.textContent = muted ? 'Siren off' : 'Siren on';
       btn.classList.toggle('btn-on', !muted);
     }
   }
 
-  playPoliceChime(severity = 'CRITICAL') {
+  playChime(severity = 'CRITICAL') {
     if (this.muted) return;
     try {
       const ctx = this.initAudio();
@@ -41,18 +44,18 @@ class AlertManager {
       const now = ctx.currentTime;
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
-      // An unconfirmed near-miss gets a softer, lower cue than a confirmed hit,
-      // so an operator can tell them apart without looking away from the map.
+      // An unconfirmed near-miss gets a softer, lower cue than a confirmed
+      // hit, so the two are distinguishable without looking away from the map.
       const isReview = String(severity).toUpperCase() === 'REVIEW';
 
-      osc.type = isReview ? 'sine' : 'sawtooth';
+      osc.type = isReview ? 'sine' : 'square';
       const high = isReview ? 620 : 880;
       const low = isReview ? 500 : 660;
       osc.frequency.setValueAtTime(high, now);
       osc.frequency.linearRampToValueAtTime(low, now + 0.15);
       osc.frequency.linearRampToValueAtTime(high, now + 0.3);
 
-      gain.gain.setValueAtTime(isReview ? 0.08 : 0.15, now);
+      gain.gain.setValueAtTime(isReview ? 0.06 : 0.12, now);
       gain.gain.exponentialRampToValueAtTime(0.01, now + 0.35);
 
       osc.connect(gain);
@@ -67,14 +70,14 @@ class AlertManager {
   // ---------------- Incoming ----------------
   handleIncomingAlert(alertData, gisMapInstance) {
     this.alerts.unshift(alertData);
-    this.playPoliceChime(alertData.severity);
+    this.playChime(alertData.severity);
     this.showSiren(alertData);
 
     if (gisMapInstance && alertData.camera_id) {
       gisMapInstance.highlightAlertCamera(alertData.camera_id, true);
     }
 
-    this.renderFeed();
+    this.render();
     this.refreshStats();
   }
 
@@ -85,10 +88,11 @@ class AlertManager {
 
     this.sirenBanner.classList.toggle('siren-review', !confirmed);
     this.sirenBanner.innerHTML = confirmed
-      ? `⚠️ CRITICAL WATCHLIST MATCH — <b>${esc(alertData.plate_number)}</b> DETECTED AT
-         ${esc(String(alertData.camera_name || alertData.camera_id).toUpperCase())}`
-      : `🔎 POSSIBLE MATCH — CAMERA READ <b>${esc(alertData.plate_number)}</b>, ONE CHARACTER FROM WATCHLIST
-         <b>${esc(alertData.matched_watchlist_plate)}</b> · VISUAL CONFIRMATION REQUIRED`;
+      ? `WATCHLIST MATCH &mdash; <b>${esc(alertData.plate_number)}</b> at
+         ${esc(alertData.camera_name || alertData.camera_id)} &middot;
+         ${esc(alertData.crime_category || 'suspect vehicle')}`
+      : `POSSIBLE MATCH &mdash; camera read <b>${esc(alertData.plate_number)}</b>, one character from watchlist
+         <b>${esc(alertData.matched_watchlist_plate)}</b> &middot; visual confirmation required`;
     this.sirenBanner.style.display = 'block';
 
     clearTimeout(this.sirenTimer);
@@ -97,10 +101,10 @@ class AlertManager {
     }, 9000);
   }
 
-  // ---------------- Feed ----------------
+  // ---------------- Queue ----------------
   setAlerts(alerts) {
     this.alerts = alerts || [];
-    this.renderFeed();
+    this.render();
   }
 
   setFilter(filter) {
@@ -108,7 +112,7 @@ class AlertManager {
     document.querySelectorAll('[data-alert-filter]').forEach((btn) => {
       btn.classList.toggle('active', btn.dataset.alertFilter === filter);
     });
-    this.renderFeed();
+    this.render();
   }
 
   visibleAlerts() {
@@ -116,102 +120,116 @@ class AlertManager {
     if (this.filter === 'REVIEW') {
       return this.alerts.filter((a) => String(a.severity).toUpperCase() === 'REVIEW');
     }
-    if (this.filter === 'CONFIRMED') {
-      return this.alerts.filter((a) => String(a.severity).toUpperCase() !== 'REVIEW');
-    }
     return this.alerts.filter((a) => String(a.status || 'NEW').toUpperCase() === this.filter);
   }
 
-  renderFeed() {
-    if (!this.feedContainer) return;
+  render() {
     const visible = this.visibleAlerts();
 
     if (!visible.length) {
-      this.feedContainer.innerHTML = `
-        <div class="feed-empty">
-          <div class="feed-empty-title">No alerts in this view</div>
-          <div class="feed-empty-hint">Watchlist matches appear here the moment a camera reads one.</div>
+      this.body.innerHTML = `
+        <div class="table-empty">
+          <div class="table-empty-title">No alerts in this view</div>
+          <div>Watchlist matches appear here the moment a camera reads one.</div>
         </div>
       `;
       return;
     }
 
-    this.feedContainer.innerHTML = '';
-    visible.forEach((alert) => this.feedContainer.appendChild(this.buildAlertCard(alert)));
+    const table = document.createElement('table');
+    table.className = 'data-table';
+    table.innerHTML = `
+      <thead>
+        <tr>
+          <th>Time</th><th>Number Plate</th><th>Camera</th>
+          <th>Alert Type</th><th>Status</th><th></th>
+        </tr>
+      </thead>
+    `;
+
+    const tbody = document.createElement('tbody');
+    visible.forEach((alert) => tbody.appendChild(this.buildRow(alert)));
+    table.appendChild(tbody);
+
+    this.body.innerHTML = '';
+    this.body.appendChild(table);
   }
 
-  buildAlertCard(alert) {
+  buildRow(alert) {
     const esc = Utils.esc.bind(Utils);
     const severity = String(alert.severity || 'CRITICAL').toUpperCase();
     const status = String(alert.status || 'NEW').toUpperCase();
     const isReview = severity === 'REVIEW';
     const timestamp = alert.timestamp || alert.created_at;
-
-    const card = document.createElement('div');
-    card.className = `alert-card sev-${severity.toLowerCase()} status-${status.toLowerCase()}`;
-    card.id = `alert-${alert.alert_id}`;
-
     const matchedPlate = alert.matched_watchlist_plate || alert.matched_plate;
-    // On a near-miss the read plate and the watchlist plate are different facts.
-    // Showing only one of them is how an officer ends up stopping the wrong car.
-    const plateBlock = isReview && matchedPlate
-      ? `<span class="alert-plate">${esc(alert.plate_number)}</span>
-         <span class="alert-plate-arrow">≈</span>
-         <span class="alert-plate-matched" title="Watchlist entry it resembles">${esc(matchedPlate)}</span>`
-      : `<span class="alert-plate">${esc(alert.plate_number)}</span>`;
+
+    const tr = document.createElement('tr');
+    tr.id = `alert-${alert.alert_id}`;
+    if (status === 'NEW') tr.classList.add('row-new');
+
+    // On a near-miss the read plate and the watchlist plate are different
+    // facts. Showing only one is how an officer stops the wrong car.
+    const plateCell = isReview && matchedPlate
+      ? `<span class="alert-plate-pair">
+           <span>${esc(alert.plate_number)}</span>
+           <span class="alert-plate-arrow">&asymp;</span>
+           <span class="alert-plate-matched" title="Watchlist entry it resembles">${esc(matchedPlate)}</span>
+         </span>
+         <span class="alert-note">Unconfirmed &mdash; verify visually before acting.</span>`
+      : esc(alert.plate_number);
 
     const sightings = Number(alert.sighting_count || 1);
-    const sightingsBadge = sightings > 1
-      ? `<span class="alert-chip" title="Repeat sightings folded into this alert">×${sightings}</span>`
-      : '';
+    const statusDot = status === 'NEW' ? 'dot-warn' : status === 'RESOLVED' ? 'dot-ok' : 'dot-idle';
 
-    card.innerHTML = `
-      <div class="alert-details">
-        <h4>
-          <span class="status-dot alert"></span>
-          ${plateBlock}
-          <span class="alert-sev-tag" style="color:${Utils.severityColor(severity)};">${esc(severity)}</span>
-          ${sightingsBadge}
-          ${status !== 'NEW' ? `<span class="alert-chip chip-muted">${esc(status)}</span>` : ''}
-        </h4>
-        <div class="alert-meta">
-          <b>${esc(alert.camera_name || alert.camera_id)}</b> · ${esc(alert.department || 'Gujarat Police')}
-        </div>
-        <div class="alert-meta alert-meta-strong">
-          ${esc(alert.crime_category || 'Suspect Vehicle')} · FIR ${esc(alert.fir_number || 'not recorded')}
-        </div>
-        ${isReview ? `<div class="alert-review-note">Unconfirmed single-character difference — verify visually before acting.</div>` : ''}
-        <div class="alert-meta alert-time" title="${esc(Utils.formatDateTime(timestamp))}">
-          ${esc(Utils.formatTime(timestamp))} IST · ${esc(Utils.formatRelative(timestamp))}
-        </div>
-      </div>
-      <div class="alert-actions">
-        <button class="alert-action-btn" data-trace>Trace Route</button>
-        <button class="btn-xs" data-ack ${status === 'NEW' ? '' : 'disabled'}>Ack</button>
-        <button class="btn-xs" data-resolve ${status === 'RESOLVED' ? 'disabled' : ''}>Resolve</button>
-      </div>
+    tr.innerHTML = `
+      <td class="col-time">${esc(Utils.formatTime(timestamp))}</td>
+      <td class="col-plate">${plateCell}${sightings > 1
+        ? `<span class="sighting-chip" title="Repeat sightings folded in">&times;${sightings}</span>` : ''}</td>
+      <td>${esc(alert.camera_name || alert.camera_id)}
+        <span class="col-sub">${esc(alert.department || '')}</span></td>
+      <td>${esc(alert.crime_category || 'Suspect vehicle')}
+        <span class="col-sub">FIR ${esc(alert.fir_number || 'not recorded')}</span></td>
+      <td>
+        <span class="status-cell"><span class="dot ${statusDot}"></span>${esc(this.statusLabel(status, isReview))}</span>
+      </td>
     `;
 
-    card.querySelector('[data-trace]').addEventListener('click', () => {
+    const actions = document.createElement('td');
+    actions.className = 'col-actions';
+
+    const trace = document.createElement('button');
+    trace.className = 'btn';
+    trace.textContent = 'Trace';
+    trace.addEventListener('click', (e) => {
+      e.stopPropagation();
       AlertManager.trackFromAlert(alert.plate_number);
     });
-    card.querySelector('[data-ack]').addEventListener('click', (e) => {
-      this.updateStatus(alert, 'acknowledge', e.currentTarget);
-    });
-    card.querySelector('[data-resolve]').addEventListener('click', (e) => {
-      this.updateStatus(alert, 'resolve', e.currentTarget);
-    });
+    actions.appendChild(trace);
 
-    if (alert.snapshot_path) {
-      const img = document.createElement('img');
-      img.className = 'alert-thumb';
-      img.src = alert.snapshot_path;
-      img.alt = `Snapshot of ${alert.plate_number}`;
-      img.addEventListener('click', () => window.open(alert.snapshot_path, '_blank', 'noopener'));
-      card.appendChild(img);
+    if (status !== 'RESOLVED') {
+      const next = document.createElement('button');
+      next.className = 'btn';
+      next.textContent = status === 'NEW' ? 'Ack' : 'Resolve';
+      next.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.updateStatus(alert, status === 'NEW' ? 'acknowledge' : 'resolve', next);
+      });
+      actions.appendChild(next);
     }
 
-    return card;
+    tr.appendChild(actions);
+
+    tr.addEventListener('click', () => {
+      if (window.gisMap) window.gisMap.highlightAlertCamera(alert.camera_id);
+    });
+
+    return tr;
+  }
+
+  statusLabel(status, isReview) {
+    if (status === 'NEW') return isReview ? 'Review' : 'New';
+    if (status === 'ACKNOWLEDGED') return 'Acknowledged';
+    return 'Resolved';
   }
 
   async updateStatus(alert, action, button) {
@@ -220,13 +238,13 @@ class AlertManager {
       if (action === 'acknowledge') {
         await API.acknowledgeAlert(alert.alert_id);
         alert.status = 'ACKNOWLEDGED';
-        Utils.toast(`Alert ${alert.plate_number} acknowledged`, 'success');
+        Utils.toast(`${alert.plate_number} acknowledged`, 'success');
       } else {
         await API.resolveAlert(alert.alert_id);
         alert.status = 'RESOLVED';
-        Utils.toast(`Alert ${alert.plate_number} resolved`, 'success');
+        Utils.toast(`${alert.plate_number} resolved`, 'success');
       }
-      this.renderFeed();
+      this.render();
       this.refreshStats();
     } catch (e) {
       button.disabled = false;
@@ -235,16 +253,15 @@ class AlertManager {
   }
 
   /**
-   * Counts come from the server rather than a local tally, so the badge is
-   * still right after a page reload or a second operator acknowledging.
+   * Counts come from the server rather than a local tally, so the readout is
+   * still right after a reload or a second operator acknowledging.
    */
   async refreshStats() {
     try {
       const stats = await API.getAlertStats();
       Utils.setText('stat-alerts-count', stats.new);
-      Utils.setText('stat-alerts-total', stats.total);
     } catch (e) {
-      /* header badge is non-critical */
+      /* header readout is non-critical */
     }
   }
 
@@ -252,9 +269,10 @@ class AlertManager {
     const input = document.getElementById('target-plate-input');
     if (!input) return;
     input.value = plate;
-    // The panel may be showing the search view; tracing into a hidden tab would
-    // look to the operator like nothing happened.
-    if (window.Dashboard) window.Dashboard.setTrackerTab('trace');
+    if (window.Dashboard) {
+      window.Dashboard.setView('search');
+      window.Dashboard.setTrackerTab('trace');
+    }
     document.getElementById('btn-track-vehicle').click();
   }
 }

@@ -4,304 +4,340 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Gujarat Police — Unified CCTV Video Management & Analytics Ecosystem</title>
+  <title>SENTINEL — Gujarat Police Video Management System</title>
 
-  <!-- Google Fonts: Inter -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link
-    href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap"
+    href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&display=swap"
     rel="stylesheet">
 
-  <!-- Leaflet GIS CSS -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
     integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
 
-  <!-- Custom Command Dashboard Stylesheet -->
-  <link rel="stylesheet" href="/css/dashboard.css">
-  <link rel="stylesheet" href="/css/enhancements.css">
+  <link rel="stylesheet" href="/css/console.css">
 </head>
 
 <body>
 
-  <!-- Siren Top Banner for Critical Watchlist Matches -->
+  <!-- Critical watchlist match banner -->
   <div id="siren-banner" class="siren-banner" role="alert" aria-live="assertive"></div>
 
-  <!-- Toast host: non-blocking replacement for window.alert() -->
   <div id="toast-host" class="toast-host" aria-live="polite"></div>
 
   <!-- Access gate. Only shown when the deployment sets SENTINEL_API_TOKEN. -->
   <div id="token-gate" class="modal-overlay token-gate">
-    <div class="modal-content token-gate-card" role="dialog" aria-modal="true" aria-label="Platform access">
+    <div class="modal" role="dialog" aria-modal="true" aria-label="Platform access">
       <div class="token-gate-body">
-        <div class="police-emblem">GP</div>
         <h3>Command Platform Access</h3>
         <p>This deployment requires a platform token. It is held for this browser session only.</p>
         <form id="token-form">
           <input type="password" id="token-input" placeholder="Platform token"
             autocomplete="current-password" aria-label="Platform token" required>
-          <button type="submit" class="btn-primary">Unlock</button>
+          <button type="submit" class="btn btn-primary">Unlock</button>
         </form>
         <p id="token-gate-error" class="token-gate-error" hidden></p>
       </div>
     </div>
   </div>
 
-  <!-- Command Header -->
-  <header class="header">
-    <div class="brand-section">
-      <div class="police-emblem">GP</div>
-      <div class="brand-title">
-        <h1>GUJARAT POLICE — UNIFIED CCTV &amp; AI ANALYTICS PLATFORM</h1>
-        <p>Model 2: Unified Viewing &amp; Selective Analytics • Model 1: Registry &amp; GIS Foundation</p>
-      </div>
+  <!-- ==================== Application bar ==================== -->
+  <header class="app-bar">
+    <div class="app-emblem" aria-hidden="true">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+        <path d="M12 2l8 3.5v6c0 4.6-3.2 8.9-8 10.5-4.8-1.6-8-5.9-8-10.5v-6z" />
+      </svg>
+    </div>
+    <div class="app-identity">
+      <h1>Gujarat Police Traffic Branch</h1>
+      <span class="divider">|</span>
+      <span class="subtitle">Video Management System</span>
     </div>
 
-    <div class="header-stats">
-      <div class="stat-pill" title="Live link to the command server's alert stream">
-        <span id="ws-dot" class="status-dot connecting"></span>
-        <span id="ws-label">Connecting…</span>
+    <div class="app-bar-spacer"></div>
+
+    <div class="readouts">
+      <div class="readout" title="Cameras in the registry">
+        <span class="dot dot-ok"></span>
+        <span class="readout-text">
+          <span class="readout-label">Cameras</span>
+          <span class="readout-value"><b id="stat-cameras-online">--</b> / <span id="stat-cameras-count">--</span></span>
+        </span>
       </div>
-      <div class="stat-pill">
-        <span>Registry <b id="stat-cameras-count">--</b></span>
+      <div class="readout" title="Cameras running AI analytics">
+        <span id="analytics-dot" class="dot dot-idle"></span>
+        <span class="readout-text">
+          <span class="readout-label">Analytics</span>
+          <span class="readout-value"><b id="stat-workers-count">0</b> / <span id="stat-workers-max">5</span></span>
+        </span>
       </div>
-      <div class="stat-pill" title="Cameras currently running AI analytics">
-        <span>AI workers <b id="stat-workers-count">0</b></span>
+      <div class="readout readout-alert" title="Unacknowledged watchlist alerts">
+        <span class="dot dot-warn"></span>
+        <span class="readout-text">
+          <span class="readout-label">Unacknowledged</span>
+          <span class="readout-value"><b id="stat-alerts-count">0</b></span>
+        </span>
       </div>
-      <div class="stat-pill stat-pill-alert" title="Unacknowledged watchlist alerts">
-        <span class="status-dot alert"></span>
-        <span>New alerts <b id="stat-alerts-count">0</b></span>
+      <div class="readout" title="Live link to the command server">
+        <span id="ws-dot" class="dot dot-idle"></span>
+        <span class="readout-text">
+          <span class="readout-label">Link</span>
+          <span class="readout-value" id="ws-label">Connecting</span>
+        </span>
       </div>
-      <div class="stat-pill">
-        <span id="system-clock" class="clock">--:--:-- IST</span>
+      <div class="readout">
+        <span class="readout-text">
+          <span class="readout-value clock-value" id="system-clock">--:--:-- IST</span>
+          <span class="clock-date" id="system-date">--</span>
+        </span>
       </div>
-      <button class="btn-xs" id="btn-open-watchlist">Watchlist DB</button>
-      <button class="btn-xs" id="btn-sync-catalogue">Sync Ingest API</button>
     </div>
   </header>
 
-  <!-- 4-Quadrant Mission Critical Layout -->
-  <main class="main-layout">
+  <!-- ==================== Navigation ====================
+       Every tab goes somewhere real. Playback, device management and the
+       other analytics a full VMS would carry are deliberately absent rather
+       than stubbed: this build does not record video or manage devices, and
+       nav that leads nowhere is worse than nav that is not there. -->
+  <nav class="nav-tabs" role="tablist">
+    <button class="nav-tab active" data-view="live" role="tab" aria-selected="true">Live</button>
+    <button class="nav-tab" data-view="search" role="tab" aria-selected="false">Search</button>
+    <button class="nav-tab" data-view="alarms" role="tab" aria-selected="false">Alarms</button>
+    <button class="nav-tab" data-view="maps" role="tab" aria-selected="false">Maps</button>
+    <button class="nav-tab" data-view="system" role="tab" aria-selected="false">System</button>
+  </nav>
 
-    <!-- Quadrant 1: Unified Multi-Camera Viewer (Model 2 Core) -->
-    <section class="panel viewer-panel">
-      <div class="panel-header">
-        <div class="panel-title">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18" />
-            <line x1="7" y1="2" x2="7" y2="22" />
-            <line x1="17" y1="2" x2="17" y2="22" />
-            <line x1="2" y1="12" x2="22" y2="12" />
+  <div class="app-body">
+
+    <!-- ==================== Sidebar ==================== -->
+    <aside class="sidebar">
+      <div class="side-group">
+        <div class="side-group-label">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="3" y="3" width="7" height="7" /><rect x="14" y="3" width="7" height="7" />
+            <rect x="3" y="14" width="7" height="7" /><rect x="14" y="14" width="7" height="7" />
           </svg>
-          Unified Multi-Camera Viewer (Model 2)
+          Views
         </div>
-        <div class="panel-actions">
-          <button class="btn-xs" data-pager data-dir="prev" title="Previous page of feeds">‹</button>
-          <span id="grid-page-label" class="pager-label">1 / 1</span>
-          <button class="btn-xs" data-pager data-dir="next" title="Next page of feeds">›</button>
-          <span class="panel-divider"></span>
-          <button class="btn-xs" data-layout-btn="1x1">1×1</button>
-          <button class="btn-xs active" data-layout-btn="2x2">2×2</button>
-          <button class="btn-xs" data-layout-btn="3x3">3×3</button>
+        <div id="side-views">
+          <button class="side-item active" data-district="">All feeds<span class="side-item-count" id="count-all">--</span></button>
         </div>
       </div>
 
-      <!-- Registry filters: driven by /api/cameras/facets so the options track
-           the live registry instead of a hardcoded department list. -->
-      <div class="filter-bar">
-        <input type="search" id="filter-search" class="filter-input"
-          placeholder="Search camera name, ID or location…" aria-label="Search cameras">
-        <select id="filter-department" class="filter-select" aria-label="Filter by department">
-          <option value="">All departments</option>
-        </select>
-        <select id="filter-district" class="filter-select" aria-label="Filter by district">
-          <option value="">All districts</option>
-        </select>
-        <select id="filter-status" class="filter-select" aria-label="Filter by connectivity status">
-          <option value="">Any status</option>
-        </select>
-        <button class="btn-xs" id="btn-clear-filters">Clear</button>
-      </div>
-
-      <div id="camera-grid" class="camera-grid grid-2x2">
-        <!-- Live camera tiles loaded dynamically -->
-      </div>
-
-      <!-- Live sighting ticker: every detection, not just watchlist matches. -->
-      <div class="ticker" aria-live="polite" aria-label="Live vehicle sightings">
-        <span class="ticker-label">LIVE SIGHTINGS</span>
-        <div id="detection-ticker" class="ticker-items">
-          <span class="ticker-idle">Awaiting detections — start AI analytics on a feed.</span>
-        </div>
-      </div>
-    </section>
-
-    <!-- Quadrant 2: Centralized GIS Map Foundation (Model 1 & Route Visualizer) -->
-    <section class="panel gis-panel">
-      <div class="panel-header">
-        <div class="panel-title">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6" />
-            <line x1="8" y1="2" x2="8" y2="18" />
-            <line x1="16" y1="6" x2="16" y2="22" />
+      <div class="side-group">
+        <div class="side-group-label">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M3 3v18h18" /><path d="M7 15l4-5 3 3 4-6" />
           </svg>
-          Statewide GIS Foundation &amp; Trajectory Visualizer
+          Analytics
         </div>
-        <div class="panel-actions">
-          <label class="toggle-label" title="Show or hide the camera registry layer">
-            <input type="checkbox" id="toggle-camera-layer" checked> Cameras
-          </label>
-          <button class="btn-xs" data-center="23.0489,72.5054,11">Ahmedabad</button>
-          <button class="btn-xs" data-center="23.2156,72.6369,12">Gandhinagar</button>
-          <button class="btn-xs" id="btn-fit-registry">Fit all</button>
-        </div>
+        <button class="side-item" id="side-anpr">ANPR<span class="side-item-count" id="count-anpr">0</span></button>
       </div>
-      <div id="map"></div>
-    </section>
 
-    <!-- Quadrant 3: Vehicle Movement Timeline & Re-ID Investigation -->
-    <section class="panel tracker-panel">
-      <div class="panel-header">
-        <div class="panel-title">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <circle cx="11" cy="11" r="8" />
-            <line x1="21" y1="21" x2="16.65" y2="16.65" />
+      <div class="side-group">
+        <div class="side-group-label">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="3" />
+            <path d="M12 2v3M12 19v3M2 12h3M19 12h3" />
           </svg>
-          Cross-Camera Vehicle Investigation &amp; Timeline
+          System
         </div>
-        <div class="panel-actions">
-          <button id="btn-export-search" class="btn-xs btn-success" hidden>Export CSV</button>
-          <button id="btn-export-docket" class="btn-xs btn-success" hidden>Export Evidence Docket</button>
-        </div>
+        <button class="side-item" id="side-watchlist">Watchlist<span class="side-item-count" id="count-watchlist">--</span></button>
+        <button class="side-item" id="side-registry">Camera registry</button>
+        <button class="side-item" id="side-sync">Sync ingest API</button>
       </div>
+    </aside>
 
-      <div class="tracker-tabs" role="tablist">
-        <button class="tracker-tab active" data-tracker-tab="trace" role="tab"
-          aria-selected="true">Trace a vehicle</button>
-        <button class="tracker-tab" data-tracker-tab="search" role="tab"
-          aria-selected="false">Search sightings</button>
-      </div>
+    <!-- ==================== Workspace ==================== -->
+    <main class="workspace layout-live" id="workspace">
 
-      <!-- Trace: reconstruct one known plate's route -->
-      <div data-tracker-view="trace">
-        <div class="tracker-search-bar">
-          <input type="text" id="target-plate-input" spellcheck="false" autocomplete="off"
-            placeholder="ENTER VEHICLE REGISTRATION (E.G. GJ01AB1234)" value="GJ01AB1234"
-            aria-label="Vehicle registration number">
-          <button id="btn-track-vehicle" class="btn-primary">Trace Route</button>
-        </div>
-
-        <!-- Optional incident window. Without it a trace returns the vehicle's
-             entire recorded history, which is rarely what a case needs. -->
-        <div class="window-bar">
-          <label for="trace-from">From (IST)</label>
-          <input type="datetime-local" id="trace-from" aria-label="Trace window start, IST">
-          <label for="trace-to">To</label>
-          <input type="datetime-local" id="trace-to" aria-label="Trace window end, IST">
-          <button class="btn-xs" id="btn-clear-trace-window" title="Trace the whole history">Any time</button>
-        </div>
-
-        <div id="timeline-container" class="timeline-container">
-          <div class="tracker-state">
-            <div class="state-icon">⌕</div>
-            <div>Enter a registration number to reconstruct its cross-camera trajectory.</div>
-            <small>Add a time window to scope the trace to an incident.</small>
+      <!-- Live feeds -->
+      <section class="panel" data-region="feeds">
+        <div class="panel-head">
+          <span class="panel-title">Live Feeds</span>
+          <span class="panel-sub" id="feeds-scope">All districts</span>
+          <div class="panel-head-spacer"></div>
+          <div class="panel-actions">
+            <button class="btn btn-icon" data-pager data-dir="prev" title="Previous page">‹</button>
+            <span id="grid-page-label" class="pager-label">1 / 1</span>
+            <button class="btn btn-icon" data-pager data-dir="next" title="Next page">›</button>
+            <button class="btn" data-layout-btn="1x1">1×1</button>
+            <button class="btn active" data-layout-btn="2x2">2×2</button>
+            <button class="btn" data-layout-btn="3x3">3×3</button>
           </div>
         </div>
-      </div>
-
-      <!-- Search: find sightings when the plate is only partly known -->
-      <div data-tracker-view="search" hidden>
-        <div class="search-form">
-          <input type="text" id="search-plate" spellcheck="false" autocomplete="off"
-            placeholder="Partial plate, e.g. GJ01" aria-label="Partial plate number">
-          <select id="search-camera" aria-label="Camera">
-            <option value="">All cameras</option>
-          </select>
-          <select id="search-vehicle-type" aria-label="Vehicle type">
-            <option value="">Any vehicle</option>
-            <option value="CAR">Car</option>
-            <option value="MOTORCYCLE">Motorcycle</option>
-            <option value="BUS">Bus</option>
-            <option value="TRUCK">Truck</option>
-          </select>
-          <select id="search-min-confidence" aria-label="Minimum confidence">
-            <option value="">Any confidence</option>
-            <option value="0.5">≥ 0.50</option>
-            <option value="0.7">≥ 0.70</option>
-            <option value="0.9">≥ 0.90</option>
-          </select>
-          <label for="search-from">From (IST)</label>
-          <input type="datetime-local" id="search-from" aria-label="Search window start, IST">
-          <label for="search-to">To</label>
-          <input type="datetime-local" id="search-to" aria-label="Search window end, IST">
-          <button id="btn-run-search" class="btn-primary">Search</button>
-          <button id="btn-clear-search" class="btn-xs">Clear</button>
+        <div class="panel-body no-scroll">
+          <div id="camera-grid" class="camera-grid grid-2x2"></div>
         </div>
+      </section>
 
-        <div id="search-results" class="timeline-container">
-          <div class="tracker-state">
-            <div class="state-icon">⌕</div>
-            <div>Search recorded sightings by partial plate, camera or time window.</div>
-            <small>Leave everything blank to see the most recent sightings.</small>
+      <!-- Map -->
+      <section class="panel" data-region="map">
+        <div class="panel-head">
+          <span class="panel-title">Map</span>
+          <span class="panel-sub" id="map-scope">Ahmedabad</span>
+          <div class="panel-head-spacer"></div>
+          <div class="panel-actions">
+            <button class="btn" data-center="23.0489,72.5054,11">Ahmedabad</button>
+            <button class="btn" data-center="23.2156,72.6369,12">Gandhinagar</button>
+            <button class="btn" id="btn-fit-registry">Fit all</button>
           </div>
         </div>
-      </div>
-    </section>
-
-    <!-- Quadrant 4: Real-Time Watchlist Alerts Feed -->
-    <section class="panel alerts-panel">
-      <div class="panel-header">
-        <div class="panel-title">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="2">
-            <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
-            <line x1="12" y1="9" x2="12" y2="13" />
-            <line x1="12" y1="17" x2="12.01" y2="17" />
-          </svg>
-          Automated Real-Time Watchlist Alerts
+        <div class="panel-body no-scroll">
+          <div id="map"></div>
         </div>
-        <div class="panel-actions">
-          <button class="btn-xs btn-on" id="btn-mute-siren" title="Mute or unmute the alert chime">🔊 Siren On</button>
-          <button class="btn-xs" id="btn-refresh-alerts">Refresh</button>
+      </section>
+
+      <!-- ANPR events -->
+      <section class="panel" data-region="events">
+        <div class="panel-head">
+          <span class="panel-title">ANPR Events</span>
+          <span class="panel-sub" id="events-sub">(Live)</span>
+          <div class="panel-head-spacer"></div>
+          <div class="panel-actions">
+            <button class="btn active" id="btn-events-live" title="Follow new detections as they arrive">
+              <span class="dot dot-ok"></span> Live
+            </button>
+            <button class="btn" id="btn-events-refresh">Refresh</button>
+          </div>
         </div>
-      </div>
+        <div class="panel-body" id="events-body"></div>
+      </section>
 
-      <div class="filter-bar filter-bar-compact">
-        <button class="btn-xs active" data-alert-filter="ALL">All</button>
-        <button class="btn-xs" data-alert-filter="NEW">New</button>
-        <button class="btn-xs" data-alert-filter="CONFIRMED">Confirmed</button>
-        <button class="btn-xs" data-alert-filter="REVIEW">Needs review</button>
-        <button class="btn-xs" data-alert-filter="ACKNOWLEDGED">Acknowledged</button>
-      </div>
+      <!-- Alert queue -->
+      <section class="panel" data-region="alerts">
+        <div class="panel-head">
+          <span class="panel-title">Alert Queue</span>
+          <span class="panel-sub">(Watchlist Matches)</span>
+          <div class="panel-head-spacer"></div>
+          <div class="panel-actions">
+            <button class="btn active" data-alert-filter="ALL">All</button>
+            <button class="btn" data-alert-filter="NEW">New</button>
+            <button class="btn" data-alert-filter="REVIEW">Review</button>
+            <button class="btn" data-alert-filter="ACKNOWLEDGED">Ack</button>
+            <button class="btn btn-on" id="btn-mute-siren" title="Mute or unmute the alert chime">Siren on</button>
+          </div>
+        </div>
+        <div class="panel-body" id="alert-feed"></div>
+      </section>
 
-      <div id="alert-feed" class="alert-feed"></div>
-    </section>
+      <!-- ============ Investigation (Search tab) ============ -->
+      <section class="panel" data-region="investigate" hidden>
+        <div class="panel-head">
+          <span class="panel-title">Investigation</span>
+          <div class="panel-head-spacer"></div>
+          <div class="panel-actions">
+            <button id="btn-export-search" class="btn" hidden>Export CSV</button>
+            <button id="btn-export-docket" class="btn" hidden>Evidence docket</button>
+          </div>
+        </div>
 
-  </main>
+        <div class="tracker-tabs" role="tablist">
+          <button class="tracker-tab active" data-tracker-tab="trace" role="tab" aria-selected="true">Trace a vehicle</button>
+          <button class="tracker-tab" data-tracker-tab="search" role="tab" aria-selected="false">Search sightings</button>
+        </div>
 
-  <!-- Modal: Evidentiary Docket Report -->
+        <!-- Trace: reconstruct one known plate's route -->
+        <div data-tracker-view="trace" class="panel-body">
+          <div class="form-row">
+            <input type="text" id="target-plate-input" spellcheck="false" autocomplete="off"
+              placeholder="VEHICLE REGISTRATION" value="GJ01AB1234" style="flex:1;min-width:150px"
+              aria-label="Vehicle registration number">
+            <button id="btn-track-vehicle" class="btn btn-primary">Trace route</button>
+          </div>
+          <div class="form-row">
+            <span class="form-label">From (IST)</span>
+            <input type="datetime-local" id="trace-from" aria-label="Trace window start, IST">
+            <span class="form-label">To</span>
+            <input type="datetime-local" id="trace-to" aria-label="Trace window end, IST">
+            <button class="btn" id="btn-clear-trace-window" title="Trace the whole history">Any time</button>
+          </div>
+          <div id="timeline-container">
+            <div class="tracker-state">
+              <div class="state-icon">&#9906;</div>
+              <div>Enter a registration number to reconstruct its cross-camera trajectory.</div>
+              <small>Add a time window to scope the trace to an incident.</small>
+            </div>
+          </div>
+        </div>
+
+        <!-- Search: find sightings when the plate is only partly known -->
+        <div data-tracker-view="search" class="panel-body" hidden>
+          <div class="form-row">
+            <input type="text" id="search-plate" spellcheck="false" autocomplete="off"
+              placeholder="Partial plate, e.g. GJ01" style="flex:1;min-width:120px"
+              aria-label="Partial plate number">
+            <select id="search-camera" aria-label="Camera"><option value="">All cameras</option></select>
+            <select id="search-vehicle-type" aria-label="Vehicle type">
+              <option value="">Any vehicle</option>
+              <option value="CAR">Car</option>
+              <option value="MOTORCYCLE">Two wheeler</option>
+              <option value="BUS">Bus</option>
+              <option value="TRUCK">Truck</option>
+            </select>
+            <select id="search-min-confidence" aria-label="Minimum confidence">
+              <option value="">Any confidence</option>
+              <option value="0.5">&ge; 0.50</option>
+              <option value="0.7">&ge; 0.70</option>
+              <option value="0.9">&ge; 0.90</option>
+            </select>
+          </div>
+          <div class="form-row">
+            <span class="form-label">From (IST)</span>
+            <input type="datetime-local" id="search-from" aria-label="Search window start, IST">
+            <span class="form-label">To</span>
+            <input type="datetime-local" id="search-to" aria-label="Search window end, IST">
+            <button id="btn-run-search" class="btn btn-primary">Search</button>
+            <button id="btn-clear-search" class="btn">Clear</button>
+          </div>
+          <div id="search-results">
+            <div class="tracker-state">
+              <div class="state-icon">&#9906;</div>
+              <div>Search recorded sightings by partial plate, camera or time window.</div>
+              <small>Leave everything blank to see the most recent sightings.</small>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ System ============ -->
+      <section class="panel" data-region="system" hidden>
+        <div class="panel-head">
+          <span class="panel-title">System</span>
+          <span class="panel-sub">Health &amp; analytics workers</span>
+          <div class="panel-head-spacer"></div>
+          <div class="panel-actions">
+            <button class="btn" id="btn-refresh-system">Refresh</button>
+          </div>
+        </div>
+        <div class="panel-body" id="system-body"></div>
+      </section>
+
+    </main>
+  </div>
+
+  <!-- ==================== Modals ==================== -->
   <div id="docket-modal" class="modal-overlay">
-    <div class="modal-content" role="dialog" aria-modal="true" aria-label="Evidentiary surveillance docket">
-      <div class="modal-header">
-        <h3>Official Evidentiary Surveillance Docket</h3>
-        <div class="modal-header-actions">
-          <button class="btn-primary" onclick="window.print()">Print / Save PDF</button>
-          <button class="btn-xs" data-close-modal="docket-modal">Close</button>
+    <div class="modal" role="dialog" aria-modal="true" aria-label="Evidentiary surveillance docket">
+      <div class="modal-head">
+        <h3>Evidentiary Surveillance Docket</h3>
+        <div class="modal-head-actions">
+          <button class="btn btn-primary" onclick="window.print()">Print / Save PDF</button>
+          <button class="btn" data-close-modal="docket-modal">Close</button>
         </div>
       </div>
-      <div id="docket-modal-body" class="modal-body docket-printable"></div>
+      <div id="docket-modal-body" class="modal-body"></div>
     </div>
   </div>
 
-  <!-- Modal: Watchlist Database Management -->
   <div id="watchlist-modal" class="modal-overlay">
-    <div class="modal-content" role="dialog" aria-modal="true" aria-label="Police watchlist database">
-      <div class="modal-header">
-        <h3>Representative Police Watchlist Database</h3>
-        <button class="btn-xs" data-close-modal="watchlist-modal">Close</button>
+    <div class="modal" role="dialog" aria-modal="true" aria-label="Police watchlist database">
+      <div class="modal-head">
+        <h3>Watchlist Database <span class="panel-sub">(representative records)</span></h3>
+        <button class="btn" data-close-modal="watchlist-modal">Close</button>
       </div>
       <div class="modal-body">
-        <form id="watchlist-form" class="watchlist-form">
+        <form id="watchlist-form" class="form-row" style="margin:-14px -14px 14px">
           <input type="text" id="wl-plate" placeholder="Plate (GJ01AB1234)" required aria-label="Plate number">
           <input type="text" id="wl-category" placeholder="Crime category" required aria-label="Crime category">
           <input type="text" id="wl-model" placeholder="Make / model" aria-label="Vehicle make and model">
@@ -311,18 +347,11 @@
             <option value="HIGH">HIGH</option>
             <option value="MEDIUM">MEDIUM</option>
           </select>
-          <button type="submit" class="btn-primary">Add to watchlist</button>
+          <button type="submit" class="btn btn-primary">Add</button>
         </form>
-
         <table class="data-table">
           <thead>
-            <tr>
-              <th>Plate</th>
-              <th>Category</th>
-              <th>Make / Model</th>
-              <th>Police Station &amp; FIR</th>
-              <th>Action</th>
-            </tr>
+            <tr><th>Plate</th><th>Category</th><th>Make / Model</th><th>Station &amp; FIR</th><th></th></tr>
           </thead>
           <tbody id="watchlist-table-rows"></tbody>
         </table>
@@ -330,15 +359,14 @@
     </div>
   </div>
 
-  <!-- Leaflet GIS JS -->
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
     integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
 
-  <!-- Application Modules -->
   <script src="/js/utils.js"></script>
   <script src="/js/api.js"></script>
   <script src="/js/viewer.js"></script>
   <script src="/js/map.js"></script>
+  <script src="/js/events.js"></script>
   <script src="/js/alerts.js"></script>
   <script src="/js/tracker.js"></script>
   <script src="/js/search.js"></script>

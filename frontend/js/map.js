@@ -39,24 +39,16 @@ class GISMap {
     }
   }
 
-  _cameraIcon(status) {
+  _cameraIcon(status, label) {
     const offline = String(status || '').toUpperCase() !== 'ONLINE';
-    // Colour by connectivity: a registry that paints every camera green whether
-    // or not it is reachable is worse than no status at all.
-    const fill = offline ? 'rgba(148, 163, 184, 0.85)' : 'rgba(6, 182, 212, 0.9)';
-    const glow = offline ? 'rgba(148, 163, 184, 0.5)' : 'rgba(6, 182, 212, 0.8)';
+    const labelHtml = label
+      ? `<div class="map-marker-label"><b>${Utils.esc(label.id)}</b><span>${Utils.esc(label.name)}</span></div>`
+      : '';
     return L.divIcon({
       className: 'custom-cam-icon',
-      html: `
-        <div class="cam-pin" style="background:${fill}; box-shadow:0 0 10px ${glow};">
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.5">
-            <path d="M23 7l-7 5 7 5V7z"/>
-            <rect x="1" y="5" width="15" height="14" rx="2" ry="2"/>
-          </svg>
-        </div>
-      `,
-      iconSize: [22, 22],
-      iconAnchor: [11, 11],
+      html: `<div class="cam-pin ${offline ? 'is-offline' : ''}"></div>${labelHtml}`,
+      iconSize: [11, 11],
+      iconAnchor: [5, 5],
     });
   }
 
@@ -71,6 +63,7 @@ class GISMap {
       const offline = String(props.status || '').toUpperCase() !== 'ONLINE';
 
       const marker = L.marker([lat, lng], { icon: this._cameraIcon(props.status) }).addTo(this.cameraLayer);
+      marker._camProps = props;
 
       // Popups are built as DOM so the "View Stream" action can be a real
       // listener instead of an inline handler carrying interpolated data.
@@ -141,16 +134,16 @@ class GISMap {
       const implausible = hops[i].speed_implausible;
 
       L.polyline(leg, {
-        color: implausible ? '#ef4444' : '#06b6d4',
-        weight: 8,
-        opacity: implausible ? 0.25 : 0.35,
+        color: implausible ? '#cf5b52' : '#e0a340',
+        weight: 7,
+        opacity: implausible ? 0.2 : 0.22,
       }).addTo(this.routeLayer);
 
       L.polyline(leg, {
-        color: implausible ? '#ef4444' : '#38bdf8',
-        weight: 4,
-        opacity: 0.9,
-        dashArray: implausible ? '2, 10' : '8, 8',
+        color: implausible ? '#cf5b52' : '#e0a340',
+        weight: 2.5,
+        opacity: 0.95,
+        dashArray: implausible ? '3, 6' : null,
         lineCap: 'round',
       }).addTo(this.routeLayer).bindTooltip(
         implausible
@@ -163,18 +156,18 @@ class GISMap {
     hops.forEach((hop, idx) => {
       const isStart = idx === 0;
       const isEnd = idx === hops.length - 1;
-      const badgeColor = isStart ? '#10b981' : isEnd ? '#ef4444' : '#3b82f6';
+      const badgeColor = isStart ? '#4caf6a' : isEnd ? '#cf5b52' : '#e0a340';
       const label = isStart ? 'START' : isEnd ? 'LAST SEEN' : `HOP ${hop.hop_index}`;
 
       const hopIcon = L.divIcon({
         className: 'route-hop-icon',
         html: `
-          <div class="hop-pin" style="background:${badgeColor}; box-shadow:0 0 12px ${badgeColor};">
-            <span>#${esc(hop.hop_index)}</span>
+          <div class="hop-pin ${isStart ? 'hop-start' : ''} ${isEnd ? 'hop-end' : ''}">
+            <span class="hop-n">${esc(hop.hop_index)}</span>
             <small>${esc(label)}</small>
           </div>
         `,
-        iconAnchor: [30, 12],
+        iconAnchor: [8, 9],
       });
 
       const marker = L.marker([hop.latitude, hop.longitude], { icon: hopIcon }).addTo(this.routeLayer);

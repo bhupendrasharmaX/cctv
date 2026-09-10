@@ -55,7 +55,7 @@ class VehicleTracker {
         // Distinguish "never seen" from "not seen in this window" -- they lead
         // an investigation in opposite directions.
         this.setState(`
-          <div class="state-icon">∅</div>
+          <div class="state-icon">&mdash;</div>
           <div>No CCTV sightings for <b>${Utils.esc(data.plate_number)}</b>${bounded ? ' in this window' : ''}.</div>
           <small>${bounded
             ? 'The vehicle may still have been recorded outside it — try “Any time”.'
@@ -90,7 +90,7 @@ class VehicleTracker {
     this.container.innerHTML = '';
 
     const header = document.createElement('div');
-    header.className = 'timeline-header';
+    header.className = 'result-bar';
     header.innerHTML = `
       <span>Target <b>${esc(trackData.plate_number)}</b> · ${trackData.total_hops} checkpoints
         · ${trackData.total_detections} frames</span>
@@ -100,7 +100,7 @@ class VehicleTracker {
 
     if (trackData.implausible_legs) {
       const warn = document.createElement('div');
-      warn.className = 'timeline-warning';
+      warn.className = 'notice';
       warn.textContent = `${trackData.implausible_legs} leg(s) below need manual verification — the implied speed is not physically achievable.`;
       this.container.appendChild(warn);
     }
@@ -114,7 +114,7 @@ class VehicleTracker {
     const esc = Utils.esc.bind(Utils);
     const isStart = idx === 0;
     const isEnd = idx === total - 1;
-    const borderCol = isStart ? 'var(--status-online)' : isEnd ? 'var(--status-alert)' : 'var(--accent-cyan)';
+    const borderCol = isStart ? 'var(--ok)' : isEnd ? 'var(--danger)' : 'var(--accent)';
 
     const card = document.createElement('div');
     card.className = 'timeline-card';
@@ -125,11 +125,11 @@ class VehicleTracker {
     if (hop.transit_time_formatted) {
       const speed = hop.est_speed_kmh === null ? 'instantaneous' : `${esc(hop.est_speed_kmh)} km/h`;
       deltaText = `<div class="timeline-delta ${hop.speed_implausible ? 'delta-warn' : ''}">
-          ⏱ ${esc(hop.transit_time_formatted)} · ${esc(hop.distance_from_prev_km)} km · ${speed}
+          ${esc(hop.transit_time_formatted)} · ${esc(hop.distance_from_prev_km)} km · ${speed}
           ${hop.speed_implausible ? '<b class="implausible-tag">IMPLAUSIBLE</b>' : ''}
         </div>`;
     } else {
-      deltaText = '<div class="timeline-delta delta-origin">📍 Route origin</div>';
+      deltaText = '<div class="timeline-delta delta-origin">Route origin</div>';
     }
 
     const dwell = hop.dwell_seconds
