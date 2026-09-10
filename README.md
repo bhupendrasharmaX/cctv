@@ -1,4 +1,4 @@
-# SENTINEL — Gujarat Police Unified CCTV & Video Analytics Platform
+# SENTINEL - Gujarat Police Unified CCTV & Video Analytics Platform
 
 A video surveillance, GIS tracking and automatic number plate recognition (ANPR) platform for the
 Gujarat Police CCTV command ecosystem. It consumes existing government camera feeds without
