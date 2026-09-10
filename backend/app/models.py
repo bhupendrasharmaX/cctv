@@ -27,6 +27,24 @@ def utc_iso(dt: Optional[datetime.datetime]) -> Optional[str]:
     return dt.astimezone(datetime.timezone.utc).isoformat()
 
 
+def to_naive_utc(dt: Optional[datetime.datetime]) -> Optional[datetime.datetime]:
+    """
+    Normalize an incoming datetime to naive UTC so it can be compared against
+    stored columns.
+
+    A dashboard in Asia/Kolkata sends `2026-09-11T14:30:00+05:30`. Comparing
+    that against a naive UTC column either raises (aware vs naive) or silently
+    treats the wall-clock digits as UTC, shifting a search window by 5h30m and
+    returning the wrong sightings. A value with no offset is taken as already
+    UTC, which is what the API documents.
+    """
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        return dt
+    return dt.astimezone(datetime.timezone.utc).replace(tzinfo=None)
+
+
 class UTCTimestampMixin:
     """Pydantic mixin: emit every datetime field with an explicit UTC offset."""
 

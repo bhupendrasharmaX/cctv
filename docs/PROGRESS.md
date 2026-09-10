@@ -30,8 +30,8 @@
 | **Phase 7** | Vehicle detection (YOLOv8 sampled frames) | **DONE** | `VehicleDetector`, frame-skip throttled |
 | **Phase 8** | ANPR (plate detector + OCR, confidence scoring) | **DONE** | Morphological plate localisation, then OCR; whole-crop read kept as fallback |
 | **Phase 9** | Detection metadata storage | **DONE** | `detections` table, composite plate+time index |
-| **Phase 10** | Vehicle search by plate (API + UI) | **DONE** | |
-| **Phase 11** | Cross-camera timeline | **DONE** | Time-windowed hop grouping |
+| **Phase 10** | Vehicle search by plate (API + UI) | **DONE** | Partial-plate, camera, type and confidence search with CSV export |
+| **Phase 11** | Cross-camera timeline | **DONE** | Time-windowed hop grouping; traces scope to an incident window |
 | **Phase 12** | GIS route reconstruction | **DONE** | Per-leg polylines; implausible legs drawn separately |
 | **Phase 13** | Mock watchlist | **DONE** | `data/seed_watchlist.json`, labelled representative in the UI |
 | **Phase 14** | Watchlist matching | **DONE** | Exact-first, then single-edit fuzzy at REVIEW severity |
@@ -88,7 +88,17 @@
 9. **Character correction reports how many characters it rewrote**, and confidence is discounted
    per rewrite. Applied blindly, the correction could manufacture a valid-looking plate out of
    unrelated lettering and report it at full confidence.
-10. **AI imports are lazy.** torch, ultralytics and easyocr load only when a worker starts, so the
+10. **Every investigative query is bounded by a time window.** Detections,
+    alerts and the cross-camera trace share one `?from=`/`?to=` implementation.
+    An unscoped trace returns a vehicle's entire recorded history, which is
+    rarely what a case wants, and an empty windowed result says so explicitly
+    rather than reading as "never seen".
+11. **Search inputs are read as IST, not workstation-local.** The dashboard
+    renders every timestamp in Asia/Kolkata, so `datetime-local` values are
+    stamped +05:30 before being sent. A console whose clock is set elsewhere
+    would otherwise search a window hours from the one the operator typed,
+    with nothing on screen showing the discrepancy.
+12. **AI imports are lazy.** torch, ultralytics and easyocr load only when a worker starts, so the
     API, dashboard and CI run without a multi-gigabyte install. CI asserts this stays true.
 
 ---
@@ -100,7 +110,7 @@ pip install -r requirements-dev.txt
 python -m pytest tests/ -q
 ```
 
-48 tests, run in CI on Python 3.10 and 3.12:
+59 tests, run in CI on Python 3.10 and 3.12:
 
 | File | Covers |
 |---|---|
@@ -110,5 +120,6 @@ python -m pytest tests/ -q
 | `test_plate_recognizer.py` | Plate validation, character correction, localisation geometry |
 | `test_security.py` | Token enforcement across HTTP and WebSocket |
 | `test_retention.py` | Snapshot pruning by age and count |
+| `test_timewindow.py` | IST-to-UTC normalization, inverted windows, scoped traces |
 
 CI also asserts the app still imports without torch, ultralytics or easyocr present.

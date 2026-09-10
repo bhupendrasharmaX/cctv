@@ -3,6 +3,7 @@ let viewer;
 let gisMap;
 let alertManager;
 let tracker;
+let sightingSearch;
 
 const Dashboard = {
   cameras: [],
@@ -27,6 +28,9 @@ const Dashboard = {
 
     tracker = new VehicleTracker('timeline-container', gisMap);
     window.tracker = tracker;
+
+    sightingSearch = new SightingSearch('search-results');
+    window.sightingSearch = sightingSearch;
 
     this.bindControls();
     this.connectLiveChannel();
@@ -163,6 +167,7 @@ const Dashboard = {
       `;
       item.addEventListener('click', () => {
         document.getElementById('target-plate-input').value = d.plate_number;
+        this.setTrackerTab('trace');
         tracker.searchAndTrace(d.plate_number);
       });
       host.appendChild(item);
@@ -176,6 +181,7 @@ const Dashboard = {
       this.cameras = cameras;
       Utils.setText('stat-cameras-count', cameras.length);
       viewer.loadCameras(cameras);
+      this.fillCameraSelect(cameras);
 
       const geojson = await API.getCamerasGeoJSON();
       gisMap.renderCameras(geojson);
@@ -193,6 +199,54 @@ const Dashboard = {
     } catch (e) {
       /* filters degrade to free-text search */
     }
+  },
+
+  // ---------------- Investigation panel ----------------
+  setTrackerTab(tab) {
+    document.querySelectorAll('[data-tracker-tab]').forEach((btn) => {
+      const active = btn.dataset.trackerTab === tab;
+      btn.classList.toggle('active', active);
+      btn.setAttribute('aria-selected', String(active));
+    });
+    document.querySelectorAll('[data-tracker-view]').forEach((view) => {
+      view.hidden = view.dataset.trackerView !== tab;
+    });
+
+    // The two views own different export buttons; only the active one's should
+    // be reachable, and neither should appear before it has something to export.
+    const docket = document.getElementById('btn-export-docket');
+    const csv = document.getElementById('btn-export-search');
+    if (docket) docket.hidden = tab !== 'trace' || !tracker.currentTrackData;
+    if (csv) csv.hidden = tab !== 'search' || !sightingSearch.results.length;
+  },
+
+  /** Jump from a search hit into a full route reconstruction of that plate. */
+  traceFromSearch(plate) {
+    document.getElementById('target-plate-input').value = plate;
+    // Carry the search window across, so the trace stays scoped to the same
+    // incident the operator was already looking at.
+    ['from', 'to'].forEach((edge) => {
+      const src = document.getElementById(`search-${edge}`);
+      const dst = document.getElementById(`trace-${edge}`);
+      if (src && dst) dst.value = src.value;
+    });
+    this.setTrackerTab('trace');
+    tracker.searchAndTrace(plate);
+  },
+
+  /** Both the camera filter and the search camera list come from the registry. */
+  fillCameraSelect(cameras) {
+    const select = document.getElementById('search-camera');
+    if (!select) return;
+    const current = select.value;
+    select.innerHTML = '<option value="">All cameras</option>';
+    cameras.forEach((cam) => {
+      const opt = document.createElement('option');
+      opt.value = cam.camera_id;
+      opt.textContent = `${cam.camera_id} · ${cam.name}`;
+      select.appendChild(opt);
+    });
+    select.value = current;
   },
 
   fillSelect(id, options, placeholder) {
@@ -271,6 +325,7 @@ const Dashboard = {
         btn.addEventListener('click', () => {
           document.getElementById('target-plate-input').value = w.plate_number;
           this.closeModal('watchlist-modal');
+          this.setTrackerTab('trace');
           tracker.searchAndTrace(w.plate_number);
         });
         actionCell.appendChild(btn);
@@ -382,6 +437,23 @@ const Dashboard = {
     });
 
     document.getElementById('btn-export-docket').addEventListener('click', () => tracker.openDocketModal());
+
+    // --- investigation panel: trace / search ---
+    document.querySelectorAll('[data-tracker-tab]').forEach((btn) => {
+      btn.addEventListener('click', () => this.setTrackerTab(btn.dataset.trackerTab));
+    });
+
+    document.getElementById('btn-clear-trace-window').addEventListener('click', () => {
+      ['trace-from', 'trace-to'].forEach((id) => { document.getElementById(id).value = ''; });
+      Utils.toast('Time window cleared — tracing full history.', 'info', 2500);
+    });
+
+    document.getElementById('btn-run-search').addEventListener('click', () => sightingSearch.run());
+    document.getElementById('btn-clear-search').addEventListener('click', () => sightingSearch.clearForm());
+    document.getElementById('btn-export-search').addEventListener('click', () => sightingSearch.exportCsv());
+    document.getElementById('search-plate').addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') sightingSearch.run();
+    });
     document.getElementById('btn-refresh-alerts').addEventListener('click', () => this.loadAlerts());
     document.getElementById('btn-open-watchlist').addEventListener('click', () => this.openWatchlistModal());
     document.getElementById('btn-sync-catalogue').addEventListener('click', () => this.syncCatalogue());

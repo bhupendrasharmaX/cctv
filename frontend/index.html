@@ -170,21 +170,81 @@
           Cross-Camera Vehicle Investigation &amp; Timeline
         </div>
         <div class="panel-actions">
+          <button id="btn-export-search" class="btn-xs btn-success" hidden>Export CSV</button>
           <button id="btn-export-docket" class="btn-xs btn-success" hidden>Export Evidence Docket</button>
         </div>
       </div>
 
-      <div class="tracker-search-bar">
-        <input type="text" id="target-plate-input" spellcheck="false" autocomplete="off"
-          placeholder="ENTER VEHICLE REGISTRATION (E.G. GJ01AB1234)" value="GJ01AB1234"
-          aria-label="Vehicle registration number">
-        <button id="btn-track-vehicle" class="btn-primary">Trace Route</button>
+      <div class="tracker-tabs" role="tablist">
+        <button class="tracker-tab active" data-tracker-tab="trace" role="tab"
+          aria-selected="true">Trace a vehicle</button>
+        <button class="tracker-tab" data-tracker-tab="search" role="tab"
+          aria-selected="false">Search sightings</button>
       </div>
 
-      <div id="timeline-container" class="timeline-container">
-        <div class="tracker-state">
-          <div class="state-icon">⌕</div>
-          <div>Enter a registration number to reconstruct its cross-camera trajectory.</div>
+      <!-- Trace: reconstruct one known plate's route -->
+      <div data-tracker-view="trace">
+        <div class="tracker-search-bar">
+          <input type="text" id="target-plate-input" spellcheck="false" autocomplete="off"
+            placeholder="ENTER VEHICLE REGISTRATION (E.G. GJ01AB1234)" value="GJ01AB1234"
+            aria-label="Vehicle registration number">
+          <button id="btn-track-vehicle" class="btn-primary">Trace Route</button>
+        </div>
+
+        <!-- Optional incident window. Without it a trace returns the vehicle's
+             entire recorded history, which is rarely what a case needs. -->
+        <div class="window-bar">
+          <label for="trace-from">From (IST)</label>
+          <input type="datetime-local" id="trace-from" aria-label="Trace window start, IST">
+          <label for="trace-to">To</label>
+          <input type="datetime-local" id="trace-to" aria-label="Trace window end, IST">
+          <button class="btn-xs" id="btn-clear-trace-window" title="Trace the whole history">Any time</button>
+        </div>
+
+        <div id="timeline-container" class="timeline-container">
+          <div class="tracker-state">
+            <div class="state-icon">⌕</div>
+            <div>Enter a registration number to reconstruct its cross-camera trajectory.</div>
+            <small>Add a time window to scope the trace to an incident.</small>
+          </div>
+        </div>
+      </div>
+
+      <!-- Search: find sightings when the plate is only partly known -->
+      <div data-tracker-view="search" hidden>
+        <div class="search-form">
+          <input type="text" id="search-plate" spellcheck="false" autocomplete="off"
+            placeholder="Partial plate, e.g. GJ01" aria-label="Partial plate number">
+          <select id="search-camera" aria-label="Camera">
+            <option value="">All cameras</option>
+          </select>
+          <select id="search-vehicle-type" aria-label="Vehicle type">
+            <option value="">Any vehicle</option>
+            <option value="CAR">Car</option>
+            <option value="MOTORCYCLE">Motorcycle</option>
+            <option value="BUS">Bus</option>
+            <option value="TRUCK">Truck</option>
+          </select>
+          <select id="search-min-confidence" aria-label="Minimum confidence">
+            <option value="">Any confidence</option>
+            <option value="0.5">≥ 0.50</option>
+            <option value="0.7">≥ 0.70</option>
+            <option value="0.9">≥ 0.90</option>
+          </select>
+          <label for="search-from">From (IST)</label>
+          <input type="datetime-local" id="search-from" aria-label="Search window start, IST">
+          <label for="search-to">To</label>
+          <input type="datetime-local" id="search-to" aria-label="Search window end, IST">
+          <button id="btn-run-search" class="btn-primary">Search</button>
+          <button id="btn-clear-search" class="btn-xs">Clear</button>
+        </div>
+
+        <div id="search-results" class="timeline-container">
+          <div class="tracker-state">
+            <div class="state-icon">⌕</div>
+            <div>Search recorded sightings by partial plate, camera or time window.</div>
+            <small>Leave everything blank to see the most recent sightings.</small>
+          </div>
         </div>
       </div>
     </section>
@@ -281,6 +341,7 @@
   <script src="/js/map.js"></script>
   <script src="/js/alerts.js"></script>
   <script src="/js/tracker.js"></script>
+  <script src="/js/search.js"></script>
   <script src="/js/dashboard.js"></script>
 </body>
 

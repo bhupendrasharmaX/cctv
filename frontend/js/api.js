@@ -92,12 +92,23 @@ const API = {
   },
 
   // ---------------- Tracking ----------------
-  trackVehicle(plate) {
-    return this._request(`/api/track-vehicle/${encodeURIComponent(Utils.normalizePlate(plate))}`);
+  /** `window` is {from, to} as UTC ISO strings; either may be blank. */
+  trackVehicle(plate, window = {}) {
+    const path = `/api/track-vehicle/${encodeURIComponent(Utils.normalizePlate(plate))}`;
+    return this._request(`${path}${this._query({ from: window.from, to: window.to })}`);
   },
 
   getDetections(filters = {}) {
     return this._request(`/api/detections${this._query(filters)}`);
+  },
+
+  /**
+   * Investigative sighting search: partial plate, camera, vehicle type,
+   * confidence floor and time window. Rows come joined to their camera, with a
+   * total so the UI can say how many matches it left off the end.
+   */
+  searchDetections(filters = {}) {
+    return this._request(`/api/detections/search${this._query(filters)}`);
   },
 
   // ---------------- Watchlist ----------------

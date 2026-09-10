@@ -250,10 +250,12 @@ class AlertManager {
 
   static trackFromAlert(plate) {
     const input = document.getElementById('target-plate-input');
-    if (input) {
-      input.value = plate;
-      document.getElementById('btn-track-vehicle').click();
-    }
+    if (!input) return;
+    input.value = plate;
+    // The panel may be showing the search view; tracing into a hidden tab would
+    // look to the operator like nothing happened.
+    if (window.Dashboard) window.Dashboard.setTrackerTab('trace');
+    document.getElementById('btn-track-vehicle').click();
   }
 }
 

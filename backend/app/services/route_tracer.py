@@ -4,6 +4,7 @@ from typing import Dict, Any, List, Optional
 from sqlalchemy.orm import Session
 from backend.app.config import HOP_GROUPING_WINDOW_SECONDS, IMPLAUSIBLE_SPEED_KMH
 from backend.app.models import Detection, Camera, utc_iso
+from backend.app.timewindow import TimeWindow, apply_window
 
 
 def haversine_distance_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
@@ -26,47 +27,82 @@ def _format_duration(seconds: float) -> str:
     return f"{minutes}m {secs}s"
 
 
-def _empty_result(normalized_plate: str) -> Dict[str, Any]:
+def _window_payload(window: Optional[TimeWindow]) -> Dict[str, Any]:
+    if window is None:
+        return {"from": None, "to": None, "bounded": False}
+    return {
+        "from": utc_iso(window.start),
+        "to": utc_iso(window.end),
+        "bounded": window.is_bounded,
+    }
+
+
+def _empty_result(normalized_plate: str, window: Optional[TimeWindow] = None) -> Dict[str, Any]:
     """
     Same response shape as a successful trace. Callers should not have to branch
     on which keys exist just because a plate had no sightings.
     """
+    # "Never seen" and "not seen in the window you asked about" are different
+    # conclusions for an investigator, so the message says which one this is.
+    if window is not None and window.is_bounded:
+        message = (
+            f"No CCTV detections for registration plate '{normalized_plate}' "
+            f"within the requested window ({window.describe()}). The vehicle may "
+            f"still have been recorded outside it."
+        )
+    else:
+        message = f"No CCTV detections recorded for registration plate '{normalized_plate}'"
+
     return {
         "plate_number": normalized_plate,
         "total_hops": 0,
         "total_detections": 0,
         "total_distance_km": 0.0,
+        "implausible_legs": 0,
         "first_observed": None,
         "last_observed": None,
+        "window": _window_payload(window),
         "timeline": [],
         "geojson": {"type": "FeatureCollection", "features": []},
         "summary": {
             "status": "NOT_FOUND",
             "first_location": None,
             "last_location": None,
-            "message": f"No CCTV detections recorded for registration plate '{normalized_plate}'",
+            "message": message,
         },
     }
 
 
-def trace_vehicle_trajectory(db: Session, target_plate: str) -> Dict[str, Any]:
+def trace_vehicle_trajectory(
+    db: Session,
+    target_plate: str,
+    window: Optional[TimeWindow] = None,
+) -> Dict[str, Any]:
     """
     Core Evaluation Requirement:
     - Receive designated plate
     - Identify vehicle across multiple integrated departmental cameras
     - Calculate timestamped and location-wise movement history
     - Generate GIS route polyline with hop-by-hop analytics
+
+    `window` scopes the reconstruction to an incident period. Hop grouping and
+    transit maths then run over the filtered set, so a window that excludes the
+    middle of a journey yields the legs that remain rather than a misleading
+    straight line across the gap.
     """
     normalized_plate = "".join(c for c in target_plate.upper() if c.isalnum())
 
-    records = db.query(Detection, Camera)\
+    query = db.query(Detection, Camera)\
         .join(Camera, Detection.camera_id == Camera.camera_id)\
-        .filter(Detection.plate_number == normalized_plate)\
-        .order_by(Detection.capture_timestamp.asc())\
-        .all()
+        .filter(Detection.plate_number == normalized_plate)
+
+    if window is not None:
+        query = apply_window(query, Detection.capture_timestamp, window)
+
+    records = query.order_by(Detection.capture_timestamp.asc()).all()
 
     if not records:
-        return _empty_result(normalized_plate)
+        return _empty_result(normalized_plate, window)
 
     # Group successive detections at the same camera into a single visit, but only
     # while they stay inside the grouping window. A vehicle that passes a junction
@@ -205,6 +241,8 @@ def trace_vehicle_trajectory(db: Session, target_plate: str) -> Dict[str, Any]:
     message = (
         f"Reconstructed cross-camera route across {len(hops)} departmental CCTV checkpoints."
     )
+    if window is not None and window.is_bounded:
+        message += f" Scoped to {window.describe()}."
     if implausible_legs:
         message += (
             f" {implausible_legs} leg(s) imply speeds above {IMPLAUSIBLE_SPEED_KMH:.0f} km/h "
@@ -219,6 +257,7 @@ def trace_vehicle_trajectory(db: Session, target_plate: str) -> Dict[str, Any]:
         "implausible_legs": implausible_legs,
         "first_observed": hops[0]["first_seen"],
         "last_observed": hops[-1]["last_seen"],
+        "window": _window_payload(window),
         "timeline": hops,
         "geojson": {
             "type": "FeatureCollection",

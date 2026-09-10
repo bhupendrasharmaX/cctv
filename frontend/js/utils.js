@@ -137,6 +137,70 @@ const Utils = {
     const el = document.getElementById(id);
     if (el) el.textContent = value;
   },
+
+  // ---------------------------------------------------------------------
+  // Search window inputs
+  //
+  // <input type="datetime-local"> yields the *workstation's* wall clock with
+  // no zone. Everything else on this dashboard is rendered in IST, so the
+  // inputs are read as IST too -- otherwise a console whose clock is set to
+  // another zone would search a window several hours away from the one the
+  // operator typed, and nothing on screen would show the discrepancy.
+  //
+  // IST is a fixed +05:30 with no daylight saving, so stamping the offset is
+  // exact rather than an approximation.
+  // ---------------------------------------------------------------------
+  IST_OFFSET: '+05:30',
+
+  /** "2026-09-11T14:30" (IST) -> "2026-09-11T09:00:00.000Z" */
+  istInputToUtcIso(value) {
+    if (!value) return '';
+    const withSeconds = value.length === 16 ? `${value}:00` : value;
+    const parsed = new Date(`${withSeconds}${this.IST_OFFSET}`);
+    return Number.isNaN(parsed.getTime()) ? '' : parsed.toISOString();
+  },
+
+  /** UTC ISO -> the "YYYY-MM-DDTHH:mm" an IST datetime-local input expects. */
+  utcIsoToIstInput(iso) {
+    const d = this.parseDate(iso);
+    if (!d) return '';
+    const parts = this._fmt({
+      year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', hour12: false,
+    }).formatToParts(d).reduce((acc, p) => { acc[p.type] = p.value; return acc; }, {});
+    return `${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}`;
+  },
+
+  // ---------------------------------------------------------------------
+  // CSV export
+  // ---------------------------------------------------------------------
+  _csvCell(value) {
+    const text = value === null || value === undefined ? '' : String(value);
+    // Quote when the value could otherwise break the row, and double any
+    // embedded quote. A camera name containing a comma is entirely normal.
+    return /[",\n\r]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+  },
+
+  toCsv(rows, columns) {
+    const header = columns.map((c) => this._csvCell(c.label)).join(',');
+    const body = rows.map(
+      (row) => columns.map((c) => this._csvCell(c.value(row))).join(','),
+    );
+    return [header, ...body].join('\r\n');
+  },
+
+  downloadCsv(filename, csvText) {
+    // A BOM so Excel opens UTF-8 correctly rather than mangling it.
+    const blob = new Blob([`﻿${csvText}`], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  },
 };
 
 window.Utils = Utils;

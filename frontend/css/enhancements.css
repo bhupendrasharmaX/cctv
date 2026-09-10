@@ -889,3 +889,168 @@ button:disabled {
   font-size: 11px;
   color: var(--status-alert);
 }
+
+/* ---------------- Investigation panel: trace / search tabs ---------------- */
+.tracker-tabs {
+  display: flex;
+  gap: 2px;
+  padding: 6px 8px 0;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.tracker-tab {
+  background: transparent;
+  border: 1px solid transparent;
+  border-bottom: none;
+  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+  color: var(--text-secondary);
+  font-family: var(--font-family);
+  font-size: 11px;
+  font-weight: 600;
+  padding: 6px 12px;
+  cursor: pointer;
+}
+
+.tracker-tab:hover { color: var(--text-primary); }
+
+.tracker-tab.active {
+  background: var(--bg-card);
+  border-color: var(--border-color);
+  color: var(--accent-cyan);
+}
+
+/* Optional incident window on the trace view */
+.window-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  padding: 0 8px 6px;
+}
+
+.window-bar label,
+.search-form label {
+  font-size: 10px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.window-bar input[type="datetime-local"],
+.search-form input[type="datetime-local"],
+.search-form input[type="text"],
+.search-form select {
+  background: #0b1220;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  font-family: var(--font-family);
+  font-size: 11px;
+  padding: 5px 7px;
+}
+
+.window-bar input:focus,
+.search-form input:focus,
+.search-form select:focus {
+  border-color: var(--border-bright);
+  outline: none;
+}
+
+/* Browsers render the native picker icon almost black on this theme. */
+.window-bar input[type="datetime-local"]::-webkit-calendar-picker-indicator,
+.search-form input[type="datetime-local"]::-webkit-calendar-picker-indicator {
+  filter: invert(0.8);
+  cursor: pointer;
+}
+
+.search-form {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  padding: 8px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.search-form input[type="text"] { flex: 1; min-width: 130px; }
+.search-form select { max-width: 170px; }
+
+/* ---------------- Search results table ---------------- */
+.search-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11px;
+  text-align: left;
+}
+
+.search-table thead tr {
+  background: #1e293b;
+  color: var(--text-secondary);
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+.search-table th {
+  padding: 5px 6px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.search-table td {
+  padding: 5px 6px;
+  border-bottom: 1px solid rgba(51, 65, 85, 0.7);
+  vertical-align: top;
+}
+
+.search-table tbody tr {
+  cursor: pointer;
+  transition: background 0.12s;
+}
+
+.search-table tbody tr:hover { background: rgba(56, 189, 248, 0.07); }
+
+.search-table .cell-time {
+  font-family: 'JetBrains Mono', monospace;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.search-table .cell-sub {
+  display: block;
+  font-size: 9px;
+  color: var(--text-muted);
+}
+
+/* A weak read is a lead, not a fact — say so in the table. */
+.search-table .cell-weak {
+  color: var(--accent-amber);
+  font-weight: 600;
+}
+
+.search-table .cell-actions {
+  white-space: nowrap;
+  text-align: right;
+}
+
+.search-table .cell-actions button { margin-left: 3px; }
+
+.load-more {
+  display: block;
+  width: calc(100% - 16px);
+  margin: 8px;
+  padding: 6px;
+}
+
+/* Narrow screens: drop the least load-bearing column and tighten the rest so
+   the results table fits rather than relying on horizontal scroll. */
+@media (max-width: 620px) {
+  .search-table th,
+  .search-table td { padding: 4px; }
+
+  .search-table th:nth-child(4),
+  .search-table td:nth-child(4) { display: none; }
+
+  .search-table .cell-sub { display: none; }
+
+  .search-form input[type="datetime-local"] { flex: 1 1 45%; }
+}

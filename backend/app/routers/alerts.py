@@ -4,6 +4,7 @@ from typing import List, Optional
 from backend.app.config import MAX_PAGE_SIZE
 from backend.app.database import get_db
 from backend.app.models import Alert, AlertSchema, Camera, Watchlist, Detection
+from backend.app.timewindow import TimeWindow, apply_window, resolve_window
 
 router = APIRouter(prefix="/api/alerts", tags=["Real-time Watchlist Alerts"])
 
@@ -12,10 +13,14 @@ router = APIRouter(prefix="/api/alerts", tags=["Real-time Watchlist Alerts"])
 def list_alerts(
     status: Optional[str] = None,
     severity: Optional[str] = None,
+    plate: Optional[str] = None,
+    camera_id: Optional[str] = None,
     limit: int = Query(50, ge=1, le=MAX_PAGE_SIZE),
+    offset: int = Query(0, ge=0),
+    window: TimeWindow = Depends(resolve_window),
     db: Session = Depends(get_db)
 ):
-    """Fetch live alerts with complete camera and suspect context."""
+    """Fetch alerts with complete camera and suspect context, scoped to a window."""
     # Camera is outer-joined: an alert must remain visible even if the camera is
     # later removed from the registry. It is evidence, not a live status row.
     query = db.query(Alert, Camera, Watchlist, Detection)\
@@ -27,8 +32,15 @@ def list_alerts(
         query = query.filter(Alert.status == status.upper())
     if severity:
         query = query.filter(Alert.severity == severity.upper())
+    if plate:
+        clean_plate = "".join(c for c in plate.upper() if c.isalnum())
+        if clean_plate:
+            query = query.filter(Alert.plate_number.ilike(f"%{clean_plate}%"))
+    if camera_id:
+        query = query.filter(Alert.camera_id == camera_id)
 
-    results = query.order_by(Alert.created_at.desc()).limit(limit).all()
+    query = apply_window(query, Alert.created_at, window)
+    results = query.order_by(Alert.created_at.desc()).offset(offset).limit(limit).all()
 
     formatted_alerts = []
     for alert, cam, watch, det in results:
