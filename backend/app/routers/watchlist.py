@@ -61,13 +61,43 @@ def add_to_watchlist(item: WatchlistCreate, db: Session = Depends(get_db)):
 
 @router.delete("/{watchlist_id}")
 def remove_from_watchlist(watchlist_id: int, db: Session = Depends(get_db)):
-    """Deactivate or remove a vehicle from active watchlist."""
+    """
+    Deactivate a vehicle so it stops raising alerts.
+
+    Deliberately a soft deactivate, not a delete: this row is what ties existing
+    Alert records to their FIR and crime category, and an alert that has already
+    been acted on has to remain explicable afterwards.
+    """
     entry = db.query(Watchlist).filter(Watchlist.watchlist_id == watchlist_id).first()
     if not entry:
         raise HTTPException(status_code=404, detail="Watchlist entry not found")
     entry.active = False
     db.commit()
-    return {"status": "success", "message": f"Plate {entry.plate_number} deactivated from watchlist"}
+    return {
+        "status": "success",
+        "watchlist_id": entry.watchlist_id,
+        "plate_number": entry.plate_number,
+        "active": False,
+        "message": f"Plate {entry.plate_number} deactivated - it will no longer raise alerts",
+    }
+
+
+@router.post("/{watchlist_id}/reactivate", response_model=WatchlistSchema)
+def reactivate_watchlist_entry(watchlist_id: int, db: Session = Depends(get_db)):
+    """
+    Put a deactivated vehicle back under surveillance.
+
+    Re-POSTing the plate also reactivates it, but that requires resending every
+    field and silently overwrites the crime category and severity already on
+    record. This restores the entry as it stands.
+    """
+    entry = db.query(Watchlist).filter(Watchlist.watchlist_id == watchlist_id).first()
+    if not entry:
+        raise HTTPException(status_code=404, detail="Watchlist entry not found")
+    entry.active = True
+    db.commit()
+    db.refresh(entry)
+    return entry
 
 
 @router.post("/seed")

@@ -414,42 +414,113 @@ const Dashboard = {
 
   // ---------------- Watchlist ----------------
   async openWatchlistModal() {
+    const showInactive = document.getElementById('wl-show-inactive').checked;
     try {
-      const watchlist = await API.getWatchlist();
-      Utils.setText('count-watchlist', watchlist.length);
+      const watchlist = await API.getWatchlist(!showInactive);
+      Utils.setText('count-watchlist', watchlist.filter((w) => w.active).length);
+
       const tbody = document.getElementById('watchlist-table-rows');
       tbody.innerHTML = '';
 
-      watchlist.forEach((w) => {
-        const tr = document.createElement('tr');
-        tr.innerHTML = `
-          <td class="col-plate">${Utils.esc(w.plate_number)}</td>
-          <td>${Utils.esc(w.crime_category)}</td>
-          <td>${Utils.esc(w.vehicle_make_model || '—')}</td>
-          <td>${Utils.esc(w.police_station || '—')}
-            <span class="col-sub">${Utils.esc(w.fir_number || '—')}</span></td>
-        `;
-        const cell = document.createElement('td');
-        cell.className = 'col-actions';
-        const btn = document.createElement('button');
-        btn.className = 'btn';
-        btn.textContent = 'Trace';
-        btn.addEventListener('click', () => {
-          document.getElementById('target-plate-input').value = w.plate_number;
-          this.closeModal('watchlist-modal');
-          this.setView('search');
-          this.setTrackerTab('trace');
-          tracker.searchAndTrace(w.plate_number, { from: '', to: '' });
-        });
-        cell.appendChild(btn);
-        tr.appendChild(cell);
-        tbody.appendChild(tr);
-      });
+      if (!watchlist.length) {
+        tbody.innerHTML = `<tr><td colspan="6" class="table-empty">
+          <div class="table-empty-title">No entries</div>
+          <div>Add a vehicle above to put it under surveillance.</div></td></tr>`;
+        document.getElementById('watchlist-modal').style.display = 'flex';
+        return;
+      }
 
+      watchlist.forEach((w) => tbody.appendChild(this.buildWatchlistRow(w)));
       document.getElementById('watchlist-modal').style.display = 'flex';
     } catch (e) {
       Utils.toast(e.message, 'error');
     }
+  },
+
+  buildWatchlistRow(w) {
+    const esc = Utils.esc.bind(Utils);
+    const tr = document.createElement('tr');
+    if (!w.active) tr.style.opacity = '0.55';
+
+    tr.innerHTML = `
+      <td class="col-plate">${esc(w.plate_number)}</td>
+      <td>${esc(w.crime_category)}</td>
+      <td>${esc(w.vehicle_make_model || '—')}</td>
+      <td>${esc(w.police_station || '—')}
+        <span class="col-sub">${esc(w.fir_number || '—')}</span></td>
+      <td><span class="status-cell"><span class="dot ${w.active ? 'dot-ok' : 'dot-idle'}"></span>
+        ${w.active ? 'Active' : 'Deactivated'}</span></td>
+    `;
+
+    const cell = document.createElement('td');
+    cell.className = 'col-actions';
+
+    const trace = document.createElement('button');
+    trace.className = 'btn';
+    trace.textContent = 'Trace';
+    trace.addEventListener('click', () => {
+      document.getElementById('target-plate-input').value = w.plate_number;
+      this.closeModal('watchlist-modal');
+      this.setView('search');
+      this.setTrackerTab('trace');
+      tracker.searchAndTrace(w.plate_number, { from: '', to: '' });
+    });
+    cell.appendChild(trace);
+
+    if (w.active) {
+      // Two-step inline confirm rather than window.confirm: this stops a
+      // vehicle raising alerts, so it should not be one stray click, but a
+      // blocking dialog would freeze the live queue behind it.
+      const off = document.createElement('button');
+      off.className = 'btn';
+      off.textContent = 'Deactivate';
+      off.title = 'Stop this vehicle raising alerts. The record is kept.';
+      let armed = false;
+      off.addEventListener('click', async () => {
+        if (!armed) {
+          armed = true;
+          off.textContent = 'Confirm?';
+          off.classList.add('btn-on');
+          setTimeout(() => {
+            if (!armed) return;
+            armed = false;
+            off.textContent = 'Deactivate';
+            off.classList.remove('btn-on');
+          }, 4000);
+          return;
+        }
+        off.disabled = true;
+        try {
+          await API.deactivateWatchlistEntry(w.watchlist_id);
+          Utils.toast(`${w.plate_number} deactivated — it will no longer raise alerts`, 'success');
+          await this.openWatchlistModal();
+        } catch (e) {
+          off.disabled = false;
+          Utils.toast(e.message, 'error');
+        }
+      });
+      cell.appendChild(off);
+    } else {
+      const on = document.createElement('button');
+      on.className = 'btn';
+      on.textContent = 'Restore';
+      on.title = 'Put this vehicle back under surveillance';
+      on.addEventListener('click', async () => {
+        on.disabled = true;
+        try {
+          await API.reactivateWatchlistEntry(w.watchlist_id);
+          Utils.toast(`${w.plate_number} restored to the active watchlist`, 'success');
+          await this.openWatchlistModal();
+        } catch (e) {
+          on.disabled = false;
+          Utils.toast(e.message, 'error');
+        }
+      });
+      cell.appendChild(on);
+    }
+
+    tr.appendChild(cell);
+    return tr;
   },
 
   async submitWatchlistEntry(event) {
@@ -567,6 +638,7 @@ const Dashboard = {
     document.getElementById('side-anpr').addEventListener('click', () => this.setView('system'));
     document.getElementById('btn-refresh-system').addEventListener('click', () => this.renderSystem());
 
+    document.getElementById('wl-show-inactive').addEventListener('change', () => this.openWatchlistModal());
     document.getElementById('watchlist-form').addEventListener('submit', (e) => this.submitWatchlistEntry(e));
 
     document.querySelectorAll('[data-close-modal]').forEach((btn) => {

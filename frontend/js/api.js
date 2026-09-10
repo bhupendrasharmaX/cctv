@@ -112,8 +112,20 @@ const API = {
   },
 
   // ---------------- Watchlist ----------------
-  getWatchlist() {
-    return this._request('/api/watchlist');
+  getWatchlist(activeOnly = true) {
+    return this._request(`/api/watchlist${this._query({ active_only: activeOnly })}`);
+  },
+
+  /**
+   * Soft-deactivate: the entry stops matching detections but stays on record,
+   * because existing alerts reference it for their FIR and crime category.
+   */
+  deactivateWatchlistEntry(watchlistId) {
+    return this._request(`/api/watchlist/${watchlistId}`, { method: 'DELETE' });
+  },
+
+  reactivateWatchlistEntry(watchlistId) {
+    return this._request(`/api/watchlist/${watchlistId}/reactivate`, { method: 'POST' });
   },
 
   addToWatchlist(entry) {

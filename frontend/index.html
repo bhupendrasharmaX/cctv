@@ -334,7 +334,12 @@
     <div class="modal" role="dialog" aria-modal="true" aria-label="Police watchlist database">
       <div class="modal-head">
         <h3>Watchlist Database <span class="panel-sub">(representative records)</span></h3>
-        <button class="btn" data-close-modal="watchlist-modal">Close</button>
+        <div class="modal-head-actions">
+          <label class="form-label" style="display:flex;align-items:center;gap:5px;cursor:pointer">
+            <input type="checkbox" id="wl-show-inactive"> Show deactivated
+          </label>
+          <button class="btn" data-close-modal="watchlist-modal">Close</button>
+        </div>
       </div>
       <div class="modal-body">
         <form id="watchlist-form" class="form-row" style="margin:-14px -14px 14px">
@@ -351,7 +356,7 @@
         </form>
         <table class="data-table">
           <thead>
-            <tr><th>Plate</th><th>Category</th><th>Make / Model</th><th>Station &amp; FIR</th><th></th></tr>
+            <tr><th>Plate</th><th>Category</th><th>Make / Model</th><th>Station &amp; FIR</th><th>Status</th><th></th></tr>
           </thead>
           <tbody id="watchlist-table-rows"></tbody>
         </table>

@@ -33,7 +33,7 @@
 | **Phase 10** | Vehicle search by plate (API + UI) | **DONE** | Partial-plate, camera, type and confidence search with CSV export |
 | **Phase 11** | Cross-camera timeline | **DONE** | Time-windowed hop grouping; traces scope to an incident window |
 | **Phase 12** | GIS route reconstruction | **DONE** | Per-leg polylines; implausible legs drawn separately |
-| **Phase 13** | Mock watchlist | **DONE** | `data/seed_watchlist.json`, labelled representative in the UI |
+| **Phase 13** | Mock watchlist | **DONE** | Seeded records; add, deactivate and restore from the UI |
 | **Phase 14** | Watchlist matching | **DONE** | Exact-first, then single-edit fuzzy at REVIEW severity |
 | **Phase 15** | Real-time alerts (UI surfacing with snapshots) | **DONE** | WebSocket fan-out; covered by `tests/test_live_alert_pipeline.py` |
 | **Phase 16** | Camera health monitoring | **PARTIAL** | Worker liveness and reconnect counts are exposed; camera reachability is still whatever the catalogue reported |
@@ -98,7 +98,12 @@
     stamped +05:30 before being sent. A console whose clock is set elsewhere
     would otherwise search a window hours from the one the operator typed,
     with nothing on screen showing the discrepancy.
-12. **AI imports are lazy.** torch, ultralytics and easyocr load only when a worker starts, so the
+12. **Removing a vehicle from the watchlist is a soft deactivate.** The row is
+    what ties existing Alert records to their FIR and crime category, so an
+    alert that has already been acted on stays explicable afterwards. A
+    separate reactivate endpoint restores an entry without the re-POST path's
+    habit of silently overwriting its case details.
+13. **AI imports are lazy.** torch, ultralytics and easyocr load only when a worker starts, so the
     API, dashboard and CI run without a multi-gigabyte install. CI asserts this stays true.
 
 ---
@@ -110,7 +115,7 @@ pip install -r requirements-dev.txt
 python -m pytest tests/ -q
 ```
 
-59 tests, run in CI on Python 3.10 and 3.12:
+64 tests, run in CI on Python 3.10 and 3.12:
 
 | File | Covers |
 |---|---|
@@ -121,5 +126,6 @@ python -m pytest tests/ -q
 | `test_security.py` | Token enforcement across HTTP and WebSocket |
 | `test_retention.py` | Snapshot pruning by age and count |
 | `test_timewindow.py` | IST-to-UTC normalization, inverted windows, scoped traces |
+| `test_watchlist.py` | Deactivate/restore lifecycle, and that a deactivated vehicle stops alerting |
 
 CI also asserts the app still imports without torch, ultralytics or easyocr present.
