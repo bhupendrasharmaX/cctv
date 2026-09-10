@@ -1,7 +1,7 @@
 # SENTINEL — Project Progress & Operational Log
 
 > Single source of truth for Sentinel: Gujarat Police Unified CCTV & Video Analytics Platform.
-> Updated at the conclusion of every phase.
+> Updated at the conclusion of every phase. **Last updated 2026-09-11.**
 
 ---
 
@@ -37,7 +37,7 @@
 | **Phase 14** | Watchlist matching | **DONE** | Exact-first, then single-edit fuzzy at REVIEW severity |
 | **Phase 15** | Real-time alerts (UI surfacing with snapshots) | **DONE** | WebSocket fan-out; covered by `tests/test_live_alert_pipeline.py` |
 | **Phase 16** | Camera health monitoring | **PARTIAL** | Worker liveness and reconnect counts are exposed; camera reachability is still whatever the catalogue reported |
-| **Phase 17** | Integrated command dashboard | **DONE** | Registry filters, live sighting ticker, alert triage, print-ready docket |
+| **Phase 17** | Integrated command dashboard | **DONE** | VMS-style console: Live / Search / Alarms / Maps / System, district views, ANPR event log, alert queue, print-ready docket |
 | Phase 18 | Real government feed testing | PENDING | Blocked on gateway host |
 | Phase 19 | Performance & frame sampling pass | PENDING | |
 | Phase 20 | Deliverables (PPT, HLD, architecture diagrams) | PENDING | |
@@ -63,6 +63,12 @@
 - **Retention is time and count based only.** Snapshots prune on age and a file ceiling; there is
   no per-case hold, so a crop tied to an active investigation can age out. Case-aware retention is
   needed before this is evidence-grade.
+- **No single-camera detail view.** There is no screen showing one camera's recent sightings,
+  connectivity and worker state together; the information exists but is spread across the map
+  popup, the event log and the System view. Convenience, not a functional hole.
+- **The alert queue does not paginate.** It fetches the most recent 100 and stops. Past that,
+  older alerts are unreachable from the UI even though `/api/alerts` accepts `offset`. Sighting
+  search has a Load more; the queue does not.
 
 ---
 
@@ -103,8 +109,33 @@
     alert that has already been acted on stays explicable afterwards. A
     separate reactivate endpoint restores an entry without the re-POST path's
     habit of silently overwriting its case details.
-13. **AI imports are lazy.** torch, ultralytics and easyocr load only when a worker starts, so the
+13. **The console offers no navigation to features that do not exist.** A full
+    VMS carries Playback, device management and several analytics; this build
+    records nothing, manages no devices and has ANPR as its only analytic. Every
+    tab — Live, Search, Alarms, Maps, System — reaches working functionality,
+    and sidebar views are the registry's real districts rather than invented
+    zones. Nav that leads nowhere is worse than nav that is absent, and it would
+    breach the zero-fabricated-integrations constraint above.
+14. **AI imports are lazy.** torch, ultralytics and easyocr load only when a worker starts, so the
     API, dashboard and CI run without a multi-gigabyte install. CI asserts this stays true.
+
+---
+
+## Where the code lives
+
+| Remote | Repository | Role |
+|---|---|---|
+| `standalone` | `bhupendrasharmaX/sentinel` | Not a fork. `main` tracks this, so a bare `git push` goes here. CI runs. |
+| `fork` | `bhupendrasharmaX/cctv` | Fork of upstream; carries the PR branch. Push explicitly. |
+| `origin` | `mohittchoudhary/cctv` | Upstream. Never pushed to directly. |
+
+**PR #1** against `mohittchoudhary/cctv` carries the full change set (7 commits).
+It shows no checks until a maintainer approves the workflow run — GitHub gates
+Actions for first-time outside contributors.
+
+Commits must be authored as `bhupendra09x@gmail.com`. A different address on
+this machine maps to an unrelated GitHub account, and four commits once had to
+be rewritten and force-pushed to correct the attribution.
 
 ---
 
